@@ -1,0 +1,392 @@
+:root {
+  color-scheme: light;
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-soft: #f0f4ff;
+  --primary: #246bfe;
+  --primary-dark: #174bd6;
+  --primary-soft: #e8efff;
+  --text: #17191f;
+  --muted: #6f7480;
+  --line: rgba(23, 25, 31, 0.08);
+  --danger: #e5484d;
+  --shadow: 0 14px 36px rgba(38, 48, 75, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button {
+  border: 0;
+  border-radius: 16px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  min-height: 48px;
+  padding: 12px 18px;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+  transform: none;
+}
+
+.screen {
+  margin: 0 auto;
+  max-width: 520px;
+  min-height: 100dvh;
+  padding: 16px 18px 28px;
+}
+
+.homeScreen {
+  align-items: stretch;
+  display: flex;
+}
+
+.heroPanel {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: calc(100dvh - 44px);
+  width: 100%;
+}
+
+.appBadge {
+  align-items: center;
+  background: #191f2e;
+  border-radius: 999px;
+  color: white;
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 900;
+  margin: 14px 0 28px;
+  padding: 9px 14px;
+  width: fit-content;
+}
+
+.heroPanel h1 {
+  font-size: 42px;
+  line-height: 1.16;
+  margin: 0 0 14px;
+}
+
+.leadText {
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.62;
+  margin: 0;
+  word-break: keep-all;
+}
+
+.heroCard,
+.simplePanel,
+.previewPanel,
+.libraryCard,
+.emptyState {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  box-shadow: var(--shadow);
+  padding: 22px;
+  width: 100%;
+}
+
+.heroCard {
+  background: linear-gradient(140deg, #ffffff 0%, #eef4ff 100%);
+  margin: 32px 0 18px;
+}
+
+.heroCard span,
+.eyebrow {
+  color: var(--primary);
+  display: block;
+  font-size: 13px;
+  font-weight: 900;
+  margin: 0 0 8px;
+}
+
+.heroCard strong {
+  display: block;
+  font-size: 24px;
+  margin-bottom: 6px;
+}
+
+.heroCard p,
+.mutedText {
+  color: var(--muted);
+  margin: 4px 0;
+}
+
+.errorText {
+  background: #fff0f0;
+  border-radius: 16px;
+  color: var(--danger);
+  font-weight: 800;
+  line-height: 1.5;
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  word-break: keep-all;
+}
+
+.simplePanel {
+  margin-top: 14px;
+}
+
+.simplePanel h1,
+.libraryHeader h1 {
+  font-size: 31px;
+  line-height: 1.22;
+  margin: 8px 0 14px;
+}
+
+.buttonStack,
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.fixedCtaStack {
+  margin-top: auto;
+}
+
+.primaryButton {
+  background: var(--primary);
+  box-shadow: 0 12px 24px rgba(36, 107, 254, 0.26);
+  color: white;
+}
+
+.primaryButton:active {
+  background: var(--primary-dark);
+}
+
+.secondaryButton {
+  background: #edf1f7;
+  color: #273044;
+}
+
+.dangerButton {
+  background: #fff0f0;
+  color: var(--danger);
+}
+
+.largeCta {
+  flex: 1 1 100%;
+  font-size: 18px;
+  min-height: 58px;
+}
+
+.textButton {
+  background: transparent;
+  color: var(--primary);
+  min-height: 38px;
+  padding: 6px 0;
+}
+
+.iconButton {
+  align-items: center;
+  background: #eef1f6;
+  border-radius: 50%;
+  color: var(--text);
+  display: inline-flex;
+  font-size: 30px;
+  height: 46px;
+  justify-content: center;
+  line-height: 1;
+  min-height: 46px;
+  padding: 0 0 3px;
+  width: 46px;
+}
+
+.topAppBar {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 46px 1fr;
+  min-height: 58px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.topAppBar strong {
+  font-size: 18px;
+}
+
+.recordPanel {
+  text-align: center;
+}
+
+.micButton {
+  align-items: center;
+  background: radial-gradient(circle at 30% 25%, #ff8c9a, #ff3b5f 60%, #d71946);
+  border-radius: 50%;
+  box-shadow: 0 22px 42px rgba(255, 59, 95, 0.28);
+  color: white;
+  display: flex;
+  font-size: 56px;
+  font-weight: 900;
+  height: 152px;
+  justify-content: center;
+  margin: 34px auto;
+  width: 152px;
+}
+
+.recordStatus {
+  border-radius: 999px;
+  display: inline-block;
+  font-weight: 900;
+  margin: 0 0 14px;
+  padding: 9px 14px;
+}
+
+.recordStatus.ready {
+  background: #edf1f7;
+}
+
+.recordStatus.recording {
+  background: #fff0f3;
+  color: #d71946;
+}
+
+.recordStatus.done {
+  background: #e9f8ef;
+  color: #168a4a;
+}
+
+.progressList {
+  counter-reset: step;
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 0;
+}
+
+.progressList li {
+  align-items: center;
+  background: #f2f4f8;
+  border-radius: 18px;
+  color: var(--muted);
+  display: flex;
+  font-weight: 800;
+  gap: 12px;
+  padding: 14px;
+}
+
+.progressList li span {
+  align-items: center;
+  background: white;
+  border-radius: 50%;
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+.progressList li.active {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.previewPanel {
+  margin: 16px auto 0;
+}
+
+.previewPanel h2,
+.libraryCard h2 {
+  font-size: 23px;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.previewText {
+  color: #3f4654;
+  line-height: 1.72;
+  word-break: keep-all;
+}
+
+.previewToc {
+  color: #3f4654;
+  line-height: 1.85;
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.libraryHeader {
+  margin: 18px 0 16px;
+}
+
+.libraryList {
+  display: grid;
+  gap: 14px;
+}
+
+.libraryCard {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 72px 1fr;
+}
+
+.libraryCard .cardActions,
+.libraryCard .previewPanel {
+  grid-column: 1 / -1;
+}
+
+.bookThumb {
+  align-items: center;
+  background: linear-gradient(160deg, #2b3350, #6b7cff);
+  border-radius: 20px;
+  color: white;
+  display: flex;
+  font-weight: 900;
+  height: 96px;
+  justify-content: center;
+  width: 72px;
+}
+
+.libraryCard .previewPanel {
+  background: #f8faff;
+  border: 1px solid rgba(36, 107, 254, 0.12);
+  box-shadow: none;
+  margin-top: 4px;
+}
+
+.cardActions button {
+  flex: 1 1 120px;
+}
+
+@media (max-width: 420px) {
+  .screen {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .heroPanel h1 {
+    font-size: 38px;
+  }
+
+  .simplePanel h1,
+  .libraryHeader h1 {
+    font-size: 28px;
+  }
+}

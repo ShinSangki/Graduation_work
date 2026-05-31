@@ -1,0 +1,11 @@
+.env
+server-test.*.log
+node_modules/
+dist/
+server/uploads/
+server/converted/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.tsbuildinfo
