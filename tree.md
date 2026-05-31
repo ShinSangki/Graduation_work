@@ -15,8 +15,6 @@ project/
 ├─ vite.config.ts
 ├─ vite.config.js
 ├─ vite.config.d.ts
-├─ capacitor.config.ts
-├─ android/
 ├─ src/
 │  ├─ main.tsx
 │  ├─ App.tsx
@@ -30,7 +28,6 @@ project/
 │  │  ├─ BiographyPreview.tsx
 │  │  ├─ BiographyReaderScreen.tsx
 │  │  ├─ BiographyEditorScreen.tsx
-│  │  ├─ EpisodeDemoScreen.tsx
 │  │  └─ reader/
 │  │     ├─ BiographyReader.tsx
 │  │     ├─ BookCover.tsx
@@ -41,14 +38,6 @@ project/
 │  │     └─ TTSControl.tsx
 │  ├─ data/
 │  │  └─ sampleBiography.ts
-│  ├─ db/
-│  │  ├─ autobiographyEpisodeDAO.ts
-│  │  ├─ database.ts
-│  │  └─ schema.ts
-│  ├─ hooks/
-│  │  ├─ useAudioRecorder.ts
-│  │  ├─ useEpisodeGenerationController.ts
-│  │  └─ useMemoirDB.ts
 │  ├─ services/
 │  │  └─ api.ts
 │  └─ styles/
@@ -56,8 +45,12 @@ project/
 │     └─ reader.css
 ├─ server/
 │  ├─ index.js
+│  ├─ db.js
 │  ├─ gemini.js
 │  ├─ ffmpeg.js
+│  ├─ data/
+│  │  ├─ memory-book.sqlite
+│  │  └─ RecodingFile/
 │  ├─ converted/
 │  └─ uploads/
 ├─ dist/
@@ -82,24 +75,16 @@ project/
 | `vite.config.ts` | Vite 원본 설정 |
 | `vite.config.js` | 컴파일된 Vite 설정 |
 | `vite.config.d.ts` | Vite 설정 타입 선언 |
-| `capacitor.config.ts` | Capacitor Android 앱 설정 |
-| `android/` | Capacitor가 생성한 Android 네이티브 프로젝트 |
 
 ### 프론트엔드
 
 | 파일 | 역할 |
 |---|---|
 | `src/main.tsx` | React 앱 마운트 |
-| `src/App.tsx` | 발표용 에피소드 데모 기본 진입점, 기존 앱 흐름 보존 |
+| `src/App.tsx` | 전체 화면 전환, 상태 관리, 에디터 저장 연결 |
 | `src/vite-env.d.ts` | Vite 환경 타입 선언 |
-| `src/services/api.ts` | 백엔드에 오디오 또는 STT 텍스트를 보내 AI 자서전 생성 요청 |
+| `src/services/api.ts` | 업로드, 생성, 조회, 수정, 삭제 API 호출 |
 | `src/data/sampleBiography.ts` | 자서전 타입, 샘플 데이터, 리더 페이지 변환 |
-| `src/db/schema.ts` | 기기 내부 SQLite 테이블 생성 SQL |
-| `src/db/database.ts` | Capacitor SQLite 연결, 실행, 조회, 트랜잭션 유틸 |
-| `src/db/autobiographyEpisodeDAO.ts` | STT 기반 생성 에피소드 초기화, 저장, 최신순 조회 DAO |
-| `src/hooks/useAudioRecorder.ts` | 네이티브 녹음 및 기기 파일 저장 |
-| `src/hooks/useMemoirDB.ts` | 자서전 로컬 저장, 목록, 상세, 삭제 CRUD 훅 |
-| `src/hooks/useEpisodeGenerationController.ts` | STT 텍스트 Gemini 호출, SQLite 저장, 목록 갱신, 오류 상태 처리 |
 | `src/styles/app.css` | 공통 화면, 버튼, 패널 스타일 |
 | `src/styles/reader.css` | 리더 전용 스타일 |
 
@@ -115,7 +100,6 @@ project/
 | `BiographyPreview.tsx` | 자서전 요약 미리보기 |
 | `BiographyReaderScreen.tsx` | 자서전 읽기, 페이지 이동, TTS, 수정 진입 |
 | `BiographyEditorScreen.tsx` | 제목, 메타데이터, 본문 수정, 원본 음성 재생 |
-| `EpisodeDemoScreen.tsx` | STT 원문, 저장 메타데이터, 생성 자서전을 2분할로 표시하는 발표 화면 |
 
 ### 이전 리더 컴포넌트
 
@@ -133,11 +117,14 @@ project/
 
 | 파일 | 역할 |
 |---|---|
-| `server/index.js` | Express AI proxy, 음성 생성 API와 STT 텍스트 생성 API 제공 |
+| `server/index.js` | Express API, 파일 업로드, Mock 생성, 조회, 수정, 삭제, 오디오 서빙 |
+| `server/db.js` | SQLite 연결, 테이블 생성, 자동 마이그레이션 | 
 | `server/gemini.js` | STT, Gemini 호출 함수, 자서전 생성 프롬프트 |
 | `server/ffmpeg.js` | 업로드 음성을 WAV로 변환 |
-| `server/converted/` | 요청 처리 중 사용하는 임시 WAV 폴더. 처리 후 삭제 |
-| `server/uploads/` | 요청 처리 중 사용하는 임시 원본 음성 폴더. 처리 후 삭제 |
+| `server/data/memory-book.sqlite` | SQLite 실제 저장 파일 |
+| `server/data/RecodingFile/` | 신규 원본 녹음 파일 저장 폴더 |
+| `server/converted/` | WAV 변환 결과 저장 폴더 |
+| `server/uploads/` | 이전 녹음 저장 폴더. 마이그레이션 호환용 |
 
 ### 자동 생성 폴더
 

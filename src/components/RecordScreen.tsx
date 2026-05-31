@@ -109,11 +109,6 @@ export function RecordScreen({ onRecorded, onBack, time, place }: RecordScreenPr
       style={{ paddingBottom: "calc(120px + env(safe-area-inset-bottom))" }}
     >
       <style>{`
-        @keyframes recordingRipple {
-          0% { opacity: 0.54; transform: scale(0.86); }
-          75%, 100% { opacity: 0; transform: scale(1.62); }
-        }
-
         @keyframes uploadSpin {
           to { transform: rotate(360deg); }
         }
@@ -202,65 +197,28 @@ export function RecordScreen({ onRecorded, onBack, time, place }: RecordScreenPr
             width: "240px",
           }}
         >
-          {recordingStatus === "recording" && (
-            <>
-              <span
-                style={{
-                  animation: "recordingRipple 2s ease-out infinite",
-                  background: "rgba(36, 107, 254, 0.24)",
-                  borderRadius: "50%",
-                  height: "170px",
-                  position: "absolute",
-                  width: "170px",
-                }}
-              />
-              <span
-                style={{
-                  animation: "recordingRipple 2s 0.8s ease-out infinite",
-                  background: "rgba(36, 107, 254, 0.2)",
-                  borderRadius: "50%",
-                  height: "170px",
-                  position: "absolute",
-                  width: "170px",
-                }}
-              />
-            </>
-          )}
           <button
             aria-label={
               recordingStatus === "done" ? "다시 녹음 준비" : "녹음 시작"
             }
-            disabled={recordingStatus === "recording" || isUploading}
-            onClick={recordingStatus === "done" ? resetRecording : handleStartRecording}
-            style={{
-              alignItems: "center",
-              background:
-                recordingStatus === "done"
-                  ? "#a7afbd"
-                  : recordingStatus === "recording"
-                    ? "#246bfe"
-                    : "#e5484d",
-              border: 0,
-              borderRadius: "50%",
-              boxShadow:
-                recordingStatus === "recording"
-                  ? "0 12px 28px rgba(36, 107, 254, 0.34)"
-                  : "0 12px 28px rgba(38, 48, 75, 0.18)",
-              color: "#fff",
-              cursor: recordingStatus === "recording" ? "default" : "pointer",
-              display: "flex",
-              fontSize: "58px",
-              height: "160px",
-              justifyContent: "center",
-              lineHeight: 1,
-              paddingBottom: recordingStatus === "done" ? "8px" : 0,
-              position: "relative",
-              width: "160px",
-              zIndex: 1,
-            }}
+            className={
+              recordingStatus === "recording"
+                ? "record-btn-active"
+                : recordingStatus === "done"
+                  ? "record-btn-done"
+                  : "record-btn-ready"
+            }
+            disabled={isUploading}
+            onClick={
+              recordingStatus === "recording"
+                ? handleStopRecording
+                : recordingStatus === "done"
+                  ? resetRecording
+                  : handleStartRecording
+            }
             type="button"
           >
-            {recordingStatus === "done" ? "✓" : "●"}
+            {recordingStatus === "done" ? "✓" : null}
           </button>
         </div>
 
