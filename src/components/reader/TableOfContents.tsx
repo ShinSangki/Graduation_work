@@ -1,3 +1,6 @@
+/*
+ * 임시 비활성: 이전 분리형 리더 전용 컴포넌트다.
+ *
 import { BiographyBook } from "../../data/sampleBiography";
 
 type TableOfContentsProps = {
@@ -24,3 +27,4 @@ export function TableOfContents({ book, onSelectChapter }: TableOfContentsProps)
     </article>
   );
 }
+*/

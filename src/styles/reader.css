@@ -1,3 +1,8 @@
+/*
+ * 임시 비활성:
+ * 현재 앱에서 사용하지 않는 이전 분리형 리더 전용 스타일이다.
+ * src/components/reader의 구현을 복구할 때 main.tsx import와 함께 활성화한다.
+ *
 .readerScreen {
   background: #f6f7fb;
   display: grid;
@@ -254,3 +259,4 @@
     font-size: 36px;
   }
 }
+*/

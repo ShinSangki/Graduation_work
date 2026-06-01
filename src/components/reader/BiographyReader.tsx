@@ -1,3 +1,8 @@
+/*
+ * 임시 비활성:
+ * 현재 앱은 src/components/BiographyReaderScreen.tsx를 사용한다.
+ * 이 파일은 이전 분리형 리더 구현 보관용이다.
+ *
 import { type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   BiographyBook,
@@ -196,3 +201,4 @@ export function BiographyReader({ book, onBack }: BiographyReaderProps) {
     </section>
   );
 }
+*/

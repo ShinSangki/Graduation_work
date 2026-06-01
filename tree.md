@@ -86,7 +86,7 @@ project/
 | `src/services/api.ts` | 업로드, 생성, 조회, 수정, 삭제 API 호출 |
 | `src/data/sampleBiography.ts` | 자서전 타입, 샘플 데이터, 리더 페이지 변환 |
 | `src/styles/app.css` | 공통 화면, 버튼, 패널 스타일 |
-| `src/styles/reader.css` | 리더 전용 스타일 |
+| `src/styles/reader.css` | 임시 비활성 상태인 이전 분리형 리더 전용 스타일 |
 
 ### 주요 화면
 
@@ -105,19 +105,19 @@ project/
 
 | 파일 | 역할 |
 |---|---|
-| `reader/BiographyReader.tsx` | 분리형 리더 컨테이너 |
-| `reader/BookCover.tsx` | 표지 UI |
-| `reader/BookPage.tsx` | 본문 페이지 UI |
-| `reader/TableOfContents.tsx` | 목차 UI |
-| `reader/PageNavigation.tsx` | 페이지 이동 UI |
-| `reader/FontSizeControl.tsx` | 글자 크기 조절 UI |
-| `reader/TTSControl.tsx` | TTS 제어 UI |
+| `reader/BiographyReader.tsx` | 임시 비활성 상태인 분리형 리더 컨테이너 |
+| `reader/BookCover.tsx` | 임시 비활성 상태인 표지 UI |
+| `reader/BookPage.tsx` | 임시 비활성 상태인 본문 페이지 UI |
+| `reader/TableOfContents.tsx` | 임시 비활성 상태인 목차 UI |
+| `reader/PageNavigation.tsx` | 임시 비활성 상태인 페이지 이동 UI |
+| `reader/FontSizeControl.tsx` | 임시 비활성 상태인 글자 크기 조절 UI |
+| `reader/TTSControl.tsx` | 임시 비활성 상태인 TTS 제어 UI |
 
 ### 백엔드
 
 | 파일 | 역할 |
 |---|---|
-| `server/index.js` | Express API, 파일 업로드, Mock 생성, 조회, 수정, 삭제, 오디오 서빙 |
+| `server/index.js` | Express API, 파일 업로드, Gemini 생성 요청 처리 |
 | `server/db.js` | SQLite 연결, 테이블 생성, 자동 마이그레이션 | 
 | `server/gemini.js` | STT, Gemini 호출 함수, 자서전 생성 프롬프트 |
 | `server/ffmpeg.js` | 업로드 음성을 WAV로 변환 |

@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const multer = require("multer");
 const path = require("node:path");
 const { convertToWav } = require("./ffmpeg");
-const { generateEpisodeFromText, generateMemoir, transcribeAudio } = require("./gemini");
+const { generateEpisodeFromText, generateMemoir, isGeminiConfigured, transcribeAudio } = require("./gemini");
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -40,7 +40,7 @@ function removeFile(filePath) {
 }
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true });
+  res.json({ ok: true, geminiConfigured: isGeminiConfigured() });
 });
 
 app.post("/api/generate", upload.single("audio"), async (req, res) => {

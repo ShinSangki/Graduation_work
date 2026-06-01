@@ -1,3 +1,6 @@
+/*
+ * 임시 비활성: 이전 분리형 리더 전용 컴포넌트다.
+ *
 type PageNavigationProps = {
   currentPage: number;
   totalPages: number;
@@ -27,3 +30,4 @@ export function PageNavigation({
     </nav>
   );
 }
+*/

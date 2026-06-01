@@ -1,3 +1,6 @@
+/*
+ * 임시 비활성: 이전 분리형 리더 전용 컴포넌트다.
+ *
 type FontSizeControlProps = {
   fontSize: number;
   min: number;
@@ -21,3 +24,4 @@ export function FontSizeControl({
     </div>
   );
 }
+*/

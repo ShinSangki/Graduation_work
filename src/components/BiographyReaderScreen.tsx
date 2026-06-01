@@ -1,4 +1,5 @@
 import {
+  type DragEvent,
   type TouchEvent,
   useEffect,
   useMemo,
@@ -16,6 +17,7 @@ type BiographyReaderScreenProps = {
   book: BiographyBook;
   onBack: () => void;
   onEdit: (chapterNumber: number, sectionNumber: number) => void;
+  onReorderChapters: (chapters: BiographyBook["chapters"]) => void;
 };
 
 const SWIPE_THRESHOLD = 50;
@@ -44,8 +46,13 @@ export function BiographyReaderScreen({
   book,
   onBack,
   onEdit,
+  onReorderChapters,
 }: BiographyReaderScreenProps) {
-  const pages = useMemo(() => buildReaderPages(book), [book]);
+  const [orderedChapters, setOrderedChapters] = useState(book.chapters);
+  const orderedChaptersRef = useRef(book.chapters);
+  const draggedChapterIndex = useRef<number | null>(null);
+  const readerBook = useMemo(() => ({ ...book, chapters: orderedChapters }), [book, orderedChapters]);
+  const pages = useMemo(() => buildReaderPages(readerBook), [readerBook]);
   const lastPageKey = `biography_last_page_${book.id}`;
   const [currentPageIndex, setCurrentPageIndex] = useState(() =>
     getStoredPageIndex(lastPageKey, pages.length - 1)
@@ -59,6 +66,46 @@ export function BiographyReaderScreen({
   const totalPages = pages.length;
   const page: ReaderPage = pages[currentPageIndex];
   const progress = ((currentPageIndex + 1) / totalPages) * 100;
+
+  function moveChapter(fromIndex: number, toIndex: number) {
+    if (fromIndex === toIndex) return;
+    const next = [...orderedChaptersRef.current];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    orderedChaptersRef.current = next;
+    setOrderedChapters(next);
+    draggedChapterIndex.current = toIndex;
+  }
+
+  function commitChapterOrder() {
+    if (draggedChapterIndex.current === null) return;
+    draggedChapterIndex.current = null;
+    onReorderChapters(
+      orderedChaptersRef.current.map((chapter, index) => ({
+        ...chapter,
+        chapterNumber: index + 1,
+      }))
+    );
+  }
+
+  function handleChapterDragStart(event: DragEvent<HTMLButtonElement>, index: number) {
+    draggedChapterIndex.current = index;
+    event.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleChapterTouchMove(event: TouchEvent<HTMLButtonElement>) {
+    const touch = event.changedTouches[0];
+    const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest("[data-chapter-index]");
+    const targetIndex = Number(target?.getAttribute("data-chapter-index"));
+    if (draggedChapterIndex.current !== null && Number.isInteger(targetIndex)) {
+      moveChapter(draggedChapterIndex.current, targetIndex);
+    }
+  }
+
+  useEffect(() => {
+    orderedChaptersRef.current = book.chapters;
+    setOrderedChapters(book.chapters);
+  }, [book.chapters]);
 
   function stopAudio() {
     window.speechSynthesis?.cancel();
@@ -183,19 +230,54 @@ export function BiographyReaderScreen({
         <section className="simplePanel">
           <p className="eyebrow">Contents</p>
           <h1>목차</h1>
+          <p className="mutedText">☰ 버튼을 끌어서 목차 순서를 바꿀 수 있습니다.</p>
           <div
             className="buttonStack"
             style={{ display: "flex", flexDirection: "column", gap: "12px" }}
           >
-            {book.chapters.map((chapter) => (
-              <button
-                className="secondaryButton"
-                key={chapter.chapterNumber}
-                onClick={() => moveToChapter(chapter.chapterNumber)}
-                style={{ minHeight: "56px", textAlign: "left" }}
+            {orderedChapters.map((chapter, index) => (
+              <div
+                data-chapter-index={index}
+                key={`${chapter.chapterNumber}-${chapter.title}`}
+                onDragEnter={() => {
+                  if (draggedChapterIndex.current !== null) {
+                    moveChapter(draggedChapterIndex.current, index);
+                  }
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                style={{ display: "grid", gap: "8px", gridTemplateColumns: "1fr 56px" }}
               >
-                {chapter.chapterNumber}. {chapter.title}
-              </button>
+                <button
+                  className="secondaryButton"
+                  onClick={() => moveToChapter(chapter.chapterNumber)}
+                  style={{ minHeight: "56px", textAlign: "left" }}
+                >
+                  {index + 1}. {chapter.title}
+                </button>
+                <button
+                  aria-label={`${chapter.title} 순서 변경`}
+                  className="secondaryButton"
+                  draggable
+                  onDragEnd={commitChapterOrder}
+                  onDragStart={(event) => handleChapterDragStart(event, index)}
+                  onTouchEnd={(event) => {
+                    event.stopPropagation();
+                    commitChapterOrder();
+                  }}
+                  onTouchMove={(event) => {
+                    event.stopPropagation();
+                    handleChapterTouchMove(event);
+                  }}
+                  onTouchStart={(event) => {
+                    event.stopPropagation();
+                    draggedChapterIndex.current = index;
+                  }}
+                  style={{ cursor: "grab", fontSize: "1.4rem", padding: 0, touchAction: "none" }}
+                  type="button"
+                >
+                  ☰
+                </button>
+              </div>
             ))}
           </div>
         </section>

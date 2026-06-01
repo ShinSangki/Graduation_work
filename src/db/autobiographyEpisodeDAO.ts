@@ -114,10 +114,11 @@ export async function getAllEpisodes(): Promise<SavedEpisode[]> {
   }));
 }
 
-/**
- * 한 생성 에피소드를 특정 자서전 섹션에 연결한다.
- * UNIQUE 인덱스가 같은 에피소드의 중복 연결을 DB 레벨에서 차단한다.
- */
+/*
+ * 임시 비활성:
+ * 에피소드 생성 데모와 일반 자서전 저장 흐름이 아직 하나의 UI로 연결되지 않았다.
+ * 스키마는 유지하고, 연결 UI를 추가할 때 아래 함수를 다시 활성화한다.
+ *
 export async function linkEpisodeToSection(sectionId: number, episodeId: string) {
   if (!isNativeDatabaseAvailable()) {
     throw new Error("에피소드-섹션 연결은 네이티브 SQLite 환경에서만 지원합니다.");
@@ -143,3 +144,4 @@ export async function unlinkEpisodeFromSection(sectionId: number) {
     [sectionId]
   );
 }
+*/

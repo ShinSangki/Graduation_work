@@ -10,8 +10,18 @@ type PreRecordSetupScreenProps = {
   onBack: () => void;
 };
 
-const timeOptions = ["어린 시절", "학창 시절", "청춘 시절", "가족과 함께한 시간", "최근의 기억"];
-const placeOptions = ["고향/동네", "학교/학원", "직장", "우리 집", "기타 장소"];
+const OTHER_OPTION = "기타";
+const timeOptions = ["어린 시절", "학창 시절", "청춘 시절", "가족과 함께한 시간", "최근의 기억", OTHER_OPTION];
+const placeOptions = ["고향/동네", "학교/학원", "직장", "우리 집", OTHER_OPTION];
+
+function getInitialOption(value: string, options: string[]) {
+  if (!value) return "";
+  return options.includes(value) ? value : OTHER_OPTION;
+}
+
+function getInitialCustomValue(value: string, options: string[]) {
+  return value && !options.includes(value) ? value : "";
+}
 
 export function PreRecordSetupScreen({
   initialStep,
@@ -21,8 +31,10 @@ export function PreRecordSetupScreen({
   onBack,
 }: PreRecordSetupScreenProps) {
   const [step, setStep] = useState<SetupStep>(initialStep);
-  const [time, setTime] = useState(initialTime);
-  const [place, setPlace] = useState(initialPlace);
+  const [time, setTime] = useState(() => getInitialOption(initialTime, timeOptions));
+  const [place, setPlace] = useState(() => getInitialOption(initialPlace, placeOptions));
+  const [customTime, setCustomTime] = useState(() => getInitialCustomValue(initialTime, timeOptions));
+  const [customPlace, setCustomPlace] = useState(() => getInitialCustomValue(initialPlace, placeOptions));
 
   useEffect(() => {
     setStep(initialStep);
@@ -37,15 +49,20 @@ export function PreRecordSetupScreen({
   }
 
   function handleContinue() {
-    if (step === 1 && time) {
+    const resolvedTime = time === OTHER_OPTION ? customTime.trim() : time;
+    const resolvedPlace = place === OTHER_OPTION ? customPlace.trim() : place;
+
+    if (step === 1 && resolvedTime) {
       setStep(2);
       return;
     }
-    if (step === 2 && place) onNext(time, place);
+    if (step === 2 && resolvedPlace) onNext(resolvedTime, resolvedPlace);
   }
 
   const options = step === 1 ? timeOptions : placeOptions;
   const selectedValue = step === 1 ? time : place;
+  const customValue = step === 1 ? customTime : customPlace;
+  const canContinue = selectedValue === OTHER_OPTION ? Boolean(customValue.trim()) : Boolean(selectedValue);
 
   return (
     <main className="screen">
@@ -81,12 +98,33 @@ export function PreRecordSetupScreen({
             );
           })}
         </div>
+
+        {selectedValue === OTHER_OPTION && (
+          <input
+            aria-label={step === 1 ? "시기 직접 입력" : "장소 직접 입력"}
+            autoFocus
+            onChange={(event) => (
+              step === 1 ? setCustomTime(event.target.value) : setCustomPlace(event.target.value)
+            )}
+            placeholder={step === 1 ? "예: 첫 직장을 다니던 시절" : "예: 창원 아파트"}
+            style={{
+              border: "1px solid rgba(23, 25, 31, 0.16)",
+              borderRadius: "14px",
+              fontSize: "1.1rem",
+              marginTop: "16px",
+              minHeight: "58px",
+              padding: "12px 14px",
+              width: "100%",
+            }}
+            value={customValue}
+          />
+        )}
       </section>
 
       <div style={{ marginTop: "20px" }}>
         <button
           className="primaryButton"
-          disabled={!selectedValue}
+          disabled={!canContinue}
           onClick={handleContinue}
           style={{ fontSize: "1.2rem", minHeight: "60px", width: "100%" }}
           type="button"

@@ -1,31 +1,28 @@
 import { useMemo, useState } from "react";
 import { BiographyEditorScreen, EditorData } from "./components/BiographyEditorScreen";
-import { EpisodeDemoScreen } from "./components/EpisodeDemoScreen";
 import { BiographyReaderScreen } from "./components/BiographyReaderScreen";
 import { GenerateProgressScreen } from "./components/GenerateProgressScreen";
 import { HomeScreen } from "./components/HomeScreen";
 import { LibraryScreen } from "./components/LibraryScreen";
 import { PreRecordSetupScreen } from "./components/PreRecordSetupScreen";
 import { RecordScreen } from "./components/RecordScreen";
-import { BiographyBook, getFirstBodyText, mergeMemoirBooks, sampleBiography } from "./data/sampleBiography";
+import { BiographyBook, mergeMemoirBooks } from "./data/sampleBiography";
 import { RecordedAudio } from "./hooks/useAudioRecorder";
-import { MemoirSummary, useMemoirDB } from "./hooks/useMemoirDB";
+import { useMemoirDB } from "./hooks/useMemoirDB";
 
 type AppScreen = "home" | "setup" | "record" | "generate" | "library" | "reader" | "editor";
 
-function toSummary(book: BiographyBook): MemoirSummary {
+function createEmptyMemoir(id: string): BiographyBook {
   return {
-    id: book.id,
-    title: book.title,
-    createdAt: book.createdAt,
-    preview: getFirstBodyText(book),
+    id,
+    title: "나의 기억책",
+    createdAt: new Date().toISOString(),
+    chapters: [],
   };
 }
 
 export default function App() {
-  return new URLSearchParams(window.location.search).get("demo") === "episode"
-    ? <EpisodeDemoScreen />
-    : <MemoryBookApp />;
+  return <MemoryBookApp />;
 }
 
 export function MemoryBookApp() {
@@ -43,27 +40,17 @@ export function MemoryBookApp() {
     sectionNumber: number;
   } | null>(null);
 
-  const libraryBooks = useMemo(
-    () => localBooks.length > 0 ? [localBooks[0]] : [toSummary(sampleBiography)],
-    [localBooks]
-  );
+  const libraryBooks = useMemo(() => localBooks, [localBooks]);
   const recentMemoir = localBooks[0] || null;
 
   async function openReader(bookId: string) {
-    const book =
-      bookId === sampleBiography.id
-        ? sampleBiography
-        : await getMemoirById(bookId);
+    const book = await getMemoirById(bookId);
     if (!book) return;
     setActiveBook(book);
     setScreen("reader");
   }
 
   async function deleteBook(bookId: string) {
-    if (bookId === sampleBiography.id) {
-      window.alert("샘플 자서전은 삭제할 수 없습니다.");
-      return;
-    }
     await deleteMemoir(bookId);
   }
 
@@ -71,7 +58,7 @@ export function MemoryBookApp() {
     const currentBook = localBooks[0] ? await getMemoirById(localBooks[0].id) : null;
     const nextBook = currentBook
       ? mergeMemoirBooks(currentBook, book)
-      : mergeMemoirBooks({ ...sampleBiography, id: book.id }, book);
+      : mergeMemoirBooks(createEmptyMemoir(book.id), book);
     const savedBook = await saveMemoir(nextBook, recordedAudio?.fileUri);
     setActiveBook(savedBook);
     setRecordedAudio(null);
@@ -106,13 +93,16 @@ export function MemoryBookApp() {
     };
 
     setActiveBook(updatedBook);
-    if (activeBook.id === sampleBiography.id) {
-      window.alert("샘플 자서전 수정은 현재 화면에만 임시 적용됩니다.");
-    } else {
-      setActiveBook(await saveMemoir(updatedBook));
-    }
+    setActiveBook(await saveMemoir(updatedBook));
     setEditingSection(null);
     setScreen("reader");
+  }
+
+  async function reorderChapters(chapters: BiographyBook["chapters"]) {
+    if (!activeBook) return;
+    const updatedBook = { ...activeBook, chapters };
+    setActiveBook(updatedBook);
+    setActiveBook(await saveMemoir(updatedBook));
   }
 
   if (screen === "setup") {
@@ -170,9 +160,7 @@ export function MemoryBookApp() {
         error={error}
         onRead={openReader}
         onPreview={async (bookId) => {
-          setPreviewBook(
-            bookId === sampleBiography.id ? sampleBiography : await getMemoirById(bookId)
-          );
+          setPreviewBook(await getMemoirById(bookId));
         }}
         onDelete={deleteBook}
         onBackHome={() => setScreen("home")}
@@ -189,6 +177,7 @@ export function MemoryBookApp() {
           setEditingSection({ chapterNumber, sectionNumber });
           setScreen("editor");
         }}
+        onReorderChapters={(chapters) => void reorderChapters(chapters)}
       />
     );
   }
