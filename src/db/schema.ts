@@ -54,17 +54,23 @@ export const CREATE_SCHEMA = `
     chapter_id INTEGER NOT NULL,
     section_order INTEGER NOT NULL,
     section_title TEXT NOT NULL,
+    recording_id INTEGER,
+    raw_text TEXT,
     time TEXT,
     place TEXT,
     summary TEXT,
     content TEXT NOT NULL,
     episode_id TEXT UNIQUE,
     FOREIGN KEY (chapter_id) REFERENCES memoir_chapters(id) ON DELETE CASCADE,
+    FOREIGN KEY (recording_id) REFERENCES recordings(id) ON DELETE SET NULL,
     FOREIGN KEY (episode_id) REFERENCES autobiography_episode(episode_id) ON DELETE SET NULL
   );
 
   CREATE INDEX IF NOT EXISTS idx_autobiography_episode_created_at
     ON autobiography_episode(created_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_memoir_sections_recording_id
+    ON memoir_sections(recording_id);
 `;
 
 export const ADD_EPISODE_ID_TO_MEMOIR_SECTIONS = `
@@ -74,7 +80,24 @@ export const ADD_EPISODE_ID_TO_MEMOIR_SECTIONS = `
     ON DELETE SET NULL;
 `;
 
+export const ADD_RAW_TEXT_TO_MEMOIR_SECTIONS = `
+  ALTER TABLE memoir_sections
+    ADD COLUMN raw_text TEXT;
+`;
+
+export const ADD_RECORDING_ID_TO_MEMOIR_SECTIONS = `
+  ALTER TABLE memoir_sections
+    ADD COLUMN recording_id INTEGER
+    REFERENCES recordings(id)
+    ON DELETE SET NULL;
+`;
+
 export const CREATE_MEMOIR_SECTION_EPISODE_INDEX = `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_memoir_sections_episode_id
     ON memoir_sections(episode_id);
+`;
+
+export const CREATE_MEMOIR_SECTION_RECORDING_INDEX = `
+  CREATE INDEX IF NOT EXISTS idx_memoir_sections_recording_id
+    ON memoir_sections(recording_id);
 `;

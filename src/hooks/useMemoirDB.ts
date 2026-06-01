@@ -31,6 +31,9 @@ type SectionRow = {
   sectionNumber: number;
   title: string;
   episodeId?: string;
+  recordingId?: number;
+  filePath?: string;
+  rawText?: string;
   time?: string;
   place?: string;
   summary?: string;
@@ -142,15 +145,26 @@ export function useMemoirDB() {
           title: chapter.title,
           sections: (
             await query<SectionRow>(
-              `SELECT section_order AS sectionNumber, section_title AS title,
-                      episode_id AS episodeId, time, place, summary, content
-               FROM memoir_sections WHERE chapter_id = ? ORDER BY section_order`,
+              `SELECT s.section_order AS sectionNumber, s.section_title AS title,
+                      s.episode_id AS episodeId, s.recording_id AS recordingId,
+                      r.file_path AS filePath, s.raw_text AS rawText,
+                      s.time, s.place, s.summary, s.content
+               FROM memoir_sections s
+               LEFT JOIN recordings r ON r.id = s.recording_id
+               WHERE s.chapter_id = ? ORDER BY s.section_order`,
               [chapter.id]
             )
           ).map((section) => ({
             sectionNumber: section.sectionNumber,
             title: section.title,
             episodeId: section.episodeId,
+            recordingId: section.recordingId,
+            audioUrl: section.filePath
+              ? Capacitor.convertFileSrc(section.filePath)
+              : memoir.filePath
+                ? Capacitor.convertFileSrc(memoir.filePath)
+                : undefined,
+            rawText: section.rawText,
             time: section.time,
             place: section.place,
             summary: section.summary,
@@ -173,56 +187,47 @@ export function useMemoirDB() {
       const numericId = /^\d+$/.test(book.id) ? Number(book.id) : null;
       const memoirId = await transaction(async () => {
         let targetMemoirId = numericId;
+        let latestRecordingId: number | null = null;
 
-        if (targetMemoirId) {
-          await run(
-            "UPDATE memoirs SET title = ?, updated_at = ?, recorded_at = ? WHERE id = ?",
-            [book.title, now, book.recordedAt || now, targetMemoirId]
-          );
-          await run(
-            `UPDATE recordings
-             SET raw_text = ?
-             WHERE id = (SELECT recording_id FROM memoirs WHERE id = ?)`,
-            [book.rawText || null, targetMemoirId]
-          );
-          if (audioFileUri) {
-            await run(
-              `UPDATE recordings
-               SET file_name = ?, file_path = ?, mime_type = ?
-               WHERE id = (SELECT recording_id FROM memoirs WHERE id = ?)`,
-              [
-                fileNameFromUri(audioFileUri),
-                audioFileUri,
-                mimeTypeFromUri(audioFileUri),
-                targetMemoirId,
-              ]
-            );
-          }
-          await run("DELETE FROM memoir_chapters WHERE memoir_id = ?", [targetMemoirId]);
-        } else {
-          const filePath = audioFileUri || "";
+        if (audioFileUri) {
+          const latestSection = book.chapters
+            .flatMap((chapter) => chapter.sections)
+            .find((section) => section.rawText === book.rawText);
           const recording = await run(
             `INSERT INTO recordings
              (file_name, file_path, mime_type, file_size, raw_text, time, place, created_at)
              VALUES (?, ?, ?, 0, ?, ?, ?, ?)`,
             [
-              fileNameFromUri(filePath),
-              filePath,
-              mimeTypeFromUri(filePath),
+              fileNameFromUri(audioFileUri),
+              audioFileUri,
+              mimeTypeFromUri(audioFileUri),
               book.rawText || null,
-              book.chapters[0]?.sections[0]?.time || null,
-              book.chapters[0]?.sections[0]?.place || null,
+              latestSection?.time || null,
+              latestSection?.place || null,
               now,
             ]
           );
-          const recordingId = recording.changes?.lastId;
-          if (!recordingId) throw new Error("녹음 저장에 실패했습니다.");
+          latestRecordingId = recording.changes?.lastId || null;
+          if (!latestRecordingId) throw new Error("녹음 저장에 실패했습니다.");
+        }
+
+        if (targetMemoirId) {
+          await run(
+            `UPDATE memoirs
+             SET title = ?, updated_at = ?, recorded_at = ?,
+                 recording_id = COALESCE(?, recording_id)
+             WHERE id = ?`,
+            [book.title, now, book.recordedAt || now, latestRecordingId, targetMemoirId]
+          );
+          await run("DELETE FROM memoir_chapters WHERE memoir_id = ?", [targetMemoirId]);
+        } else {
+          if (!latestRecordingId) throw new Error("신규 자서전에는 녹음 파일이 필요합니다.");
 
           const memoir = await run(
             `INSERT INTO memoirs
              (recording_id, title, created_at, updated_at, recorded_at)
              VALUES (?, ?, ?, ?, ?)`,
-            [recordingId, book.title, book.createdAt || now, now, book.recordedAt || now]
+            [latestRecordingId, book.title, book.createdAt || now, now, book.recordedAt || now]
           );
           targetMemoirId = memoir.changes?.lastId || null;
         }
@@ -241,13 +246,17 @@ export function useMemoirDB() {
           for (const section of chapter.sections) {
             await run(
               `INSERT INTO memoir_sections
-               (chapter_id, section_order, section_title, episode_id, time, place, summary, content)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+               (chapter_id, section_order, section_title, episode_id, recording_id, raw_text, time, place, summary, content)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 chapterId,
                 section.sectionNumber,
                 section.title,
                 section.episodeId || null,
+                section.recordingId || (
+                  latestRecordingId && section.rawText === book.rawText ? latestRecordingId : null
+                ),
+                section.rawText || null,
                 section.time || null,
                 section.place || null,
                 section.summary || null,
@@ -265,9 +274,9 @@ export function useMemoirDB() {
         audioUrl: book.audioUrl || (audioFileUri ? Capacitor.convertFileSrc(audioFileUri) : undefined),
       };
       await refresh();
-      return saved;
+      return (await getMemoirById(String(memoirId))) || saved;
     },
-    [refresh]
+    [getMemoirById, refresh]
   );
 
   const deleteMemoir = useCallback(
@@ -276,14 +285,19 @@ export function useMemoirDB() {
         writeFallbackBooks(readFallbackBooks().filter((book) => book.id !== id));
       } else {
         await transaction(async () => {
-          const row = (
-            await query<{ recordingId: number }>(
-              "SELECT recording_id AS recordingId FROM memoirs WHERE id = ?",
-              [Number(id)]
-            )
-          )[0];
+          const rows = await query<{ recordingId: number }>(
+            `SELECT recording_id AS recordingId FROM memoirs WHERE id = ?
+             UNION
+             SELECT s.recording_id AS recordingId
+             FROM memoir_sections s
+             JOIN memoir_chapters c ON c.id = s.chapter_id
+             WHERE c.memoir_id = ? AND s.recording_id IS NOT NULL`,
+            [Number(id), Number(id)]
+          );
           await run("DELETE FROM memoirs WHERE id = ?", [Number(id)]);
-          if (row) await run("DELETE FROM recordings WHERE id = ?", [row.recordingId]);
+          for (const row of rows) {
+            await run("DELETE FROM recordings WHERE id = ?", [row.recordingId]);
+          }
         });
       }
       await refresh();
@@ -291,5 +305,99 @@ export function useMemoirDB() {
     [refresh]
   );
 
-  return { books, isLoading, error, saveMemoir, getMemoirs, getMemoirById, deleteMemoir, refresh };
+  const deleteMemoirChapter = useCallback(
+    async (memoirId: string, chapterNumber: number): Promise<BiographyBook | null> => {
+      if (!isNativeDatabaseAvailable()) {
+        const books = readFallbackBooks();
+        const book = books.find((item) => item.id === memoirId);
+        if (!book || book.chapters.length <= 1) return book || null;
+
+        const updatedBook = {
+          ...book,
+          chapters: book.chapters
+            .filter((chapter) => chapter.chapterNumber !== chapterNumber)
+            .map((chapter, index) => ({ ...chapter, chapterNumber: index + 1 })),
+        };
+        writeFallbackBooks(books.map((item) => item.id === memoirId ? updatedBook : item));
+        await refresh();
+        return updatedBook;
+      }
+
+      await transaction(async () => {
+        const chapters = await query<{ id: number; chapterNumber: number }>(
+          `SELECT id, chapter_order AS chapterNumber
+           FROM memoir_chapters
+           WHERE memoir_id = ?
+           ORDER BY chapter_order`,
+          [Number(memoirId)]
+        );
+        if (chapters.length <= 1) throw new Error("마지막 목차는 삭제할 수 없습니다.");
+
+        const target = chapters.find((chapter) => chapter.chapterNumber === chapterNumber);
+        if (!target) throw new Error("삭제할 목차를 찾지 못했습니다.");
+
+        const recordings = await query<{ recordingId: number }>(
+          `SELECT DISTINCT recording_id AS recordingId
+           FROM memoir_sections
+           WHERE chapter_id = ? AND recording_id IS NOT NULL`,
+          [target.id]
+        );
+        await run("DELETE FROM memoir_chapters WHERE id = ?", [target.id]);
+
+        const remaining = chapters.filter((chapter) => chapter.id !== target.id);
+        for (const [index, chapter] of remaining.entries()) {
+          await run("UPDATE memoir_chapters SET chapter_order = ? WHERE id = ?", [index + 1, chapter.id]);
+        }
+
+        const latest = (
+          await query<{ recordingId: number }>(
+            `SELECT s.recording_id AS recordingId
+             FROM memoir_sections s
+             JOIN memoir_chapters c ON c.id = s.chapter_id
+             WHERE c.memoir_id = ? AND s.recording_id IS NOT NULL
+             ORDER BY c.chapter_order DESC, s.section_order DESC
+             LIMIT 1`,
+            [Number(memoirId)]
+          )
+        )[0];
+        if (latest) {
+          await run("UPDATE memoirs SET recording_id = ?, updated_at = ? WHERE id = ?", [
+            latest.recordingId,
+            new Date().toISOString(),
+            Number(memoirId),
+          ]);
+        }
+
+        for (const recording of recordings) {
+          const referenced = (
+            await query<{ count: number }>(
+              `SELECT COUNT(*) AS count
+               FROM memoir_sections
+               WHERE recording_id = ?`,
+              [recording.recordingId]
+            )
+          )[0];
+          if (!referenced?.count) {
+            await run("DELETE FROM recordings WHERE id = ?", [recording.recordingId]);
+          }
+        }
+      });
+
+      await refresh();
+      return getMemoirById(memoirId);
+    },
+    [getMemoirById, refresh]
+  );
+
+  return {
+    books,
+    isLoading,
+    error,
+    saveMemoir,
+    getMemoirs,
+    getMemoirById,
+    deleteMemoir,
+    deleteMemoirChapter,
+    refresh,
+  };
 }

@@ -123,6 +123,8 @@ export async function generateMemoir(
       sections: chapter.sections.map((section, sectionIndex) => ({
         sectionNumber: sectionIndex + 1,
         title: section.title,
+        audioUrl,
+        rawText: memoir.sttRawText,
         time: section.time,
         place: section.place,
         summary: section.summary,

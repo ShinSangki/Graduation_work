@@ -2,7 +2,10 @@ import { Capacitor } from "@capacitor/core";
 import { CapacitorSQLite } from "@capacitor-community/sqlite";
 import {
   ADD_EPISODE_ID_TO_MEMOIR_SECTIONS,
+  ADD_RECORDING_ID_TO_MEMOIR_SECTIONS,
+  ADD_RAW_TEXT_TO_MEMOIR_SECTIONS,
   CREATE_MEMOIR_SECTION_EPISODE_INDEX,
+  CREATE_MEMOIR_SECTION_RECORDING_INDEX,
   CREATE_SCHEMA,
   DATABASE_NAME,
 } from "./schema";
@@ -53,6 +56,12 @@ export async function initializeDatabase() {
     const hasEpisodeId = (columns.values as TableInfoRow[] | undefined)?.some(
       (column) => column.name === "episode_id"
     );
+    const hasRawText = (columns.values as TableInfoRow[] | undefined)?.some(
+      (column) => column.name === "raw_text"
+    );
+    const hasRecordingId = (columns.values as TableInfoRow[] | undefined)?.some(
+      (column) => column.name === "recording_id"
+    );
 
     if (!hasEpisodeId) {
       await CapacitorSQLite.execute({
@@ -61,9 +70,27 @@ export async function initializeDatabase() {
       });
     }
 
+    if (!hasRawText) {
+      await CapacitorSQLite.execute({
+        database: DATABASE_NAME,
+        statements: ADD_RAW_TEXT_TO_MEMOIR_SECTIONS,
+      });
+    }
+
+    if (!hasRecordingId) {
+      await CapacitorSQLite.execute({
+        database: DATABASE_NAME,
+        statements: ADD_RECORDING_ID_TO_MEMOIR_SECTIONS,
+      });
+    }
+
     await CapacitorSQLite.execute({
       database: DATABASE_NAME,
       statements: CREATE_MEMOIR_SECTION_EPISODE_INDEX,
+    });
+    await CapacitorSQLite.execute({
+      database: DATABASE_NAME,
+      statements: CREATE_MEMOIR_SECTION_RECORDING_INDEX,
     });
   })();
 

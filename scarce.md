@@ -79,6 +79,8 @@
 - `memoirs`: 자서전 기본 정보.
 - `memoir_chapters`: 자서전 장.
 - `memoir_sections`: 장 내부 섹션과 본문.
+- 새 녹음마다 `recordings` 행을 추가하고 `memoir_sections.recording_id`로 해당 원문과 음성을 연결함.
+- 목차에서 분할 자서전을 삭제하면 확인 팝업 후 해당 장과 더 이상 참조되지 않는 녹음 행을 함께 삭제함.
 
 ### 생성 에피소드 원본
 

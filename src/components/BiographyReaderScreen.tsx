@@ -18,6 +18,7 @@ type BiographyReaderScreenProps = {
   onBack: () => void;
   onEdit: (chapterNumber: number, sectionNumber: number) => void;
   onReorderChapters: (chapters: BiographyBook["chapters"]) => void;
+  onDeleteChapter: (chapterNumber: number) => void;
 };
 
 const SWIPE_THRESHOLD = 50;
@@ -47,6 +48,7 @@ export function BiographyReaderScreen({
   onBack,
   onEdit,
   onReorderChapters,
+  onDeleteChapter,
 }: BiographyReaderScreenProps) {
   const [orderedChapters, setOrderedChapters] = useState(book.chapters);
   const orderedChaptersRef = useRef(book.chapters);
@@ -100,6 +102,11 @@ export function BiographyReaderScreen({
     if (draggedChapterIndex.current !== null && Number.isInteger(targetIndex)) {
       moveChapter(draggedChapterIndex.current, targetIndex);
     }
+  }
+
+  function handleDeleteChapter(chapterNumber: number, title: string) {
+    if (!window.confirm(`"${title}" 목차와 연결된 녹음 기록을 삭제할까요?`)) return;
+    onDeleteChapter(chapterNumber);
   }
 
   useEffect(() => {
@@ -230,7 +237,7 @@ export function BiographyReaderScreen({
         <section className="simplePanel">
           <p className="eyebrow">Contents</p>
           <h1>목차</h1>
-          <p className="mutedText">☰ 버튼을 끌어서 목차 순서를 바꿀 수 있습니다.</p>
+          <p className="mutedText">☰ 버튼을 끌어서 순서를 바꾸거나, 삭제 버튼으로 녹음 기록을 지울 수 있습니다.</p>
           <div
             className="buttonStack"
             style={{ display: "flex", flexDirection: "column", gap: "12px" }}
@@ -245,7 +252,7 @@ export function BiographyReaderScreen({
                   }
                 }}
                 onDragOver={(event) => event.preventDefault()}
-                style={{ display: "grid", gap: "8px", gridTemplateColumns: "1fr 56px" }}
+                style={{ display: "grid", gap: "8px", gridTemplateColumns: "1fr 56px 56px" }}
               >
                 <button
                   className="secondaryButton"
@@ -276,6 +283,16 @@ export function BiographyReaderScreen({
                   type="button"
                 >
                   ☰
+                </button>
+                <button
+                  aria-label={`${chapter.title} 삭제`}
+                  className="secondaryButton"
+                  disabled={orderedChapters.length <= 1}
+                  onClick={() => handleDeleteChapter(chapter.chapterNumber, chapter.title)}
+                  style={{ color: "var(--danger)", fontSize: "0.9rem", padding: 0 }}
+                  type="button"
+                >
+                  삭제
                 </button>
               </div>
             ))}

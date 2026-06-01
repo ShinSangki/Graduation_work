@@ -28,8 +28,15 @@ export default function App() {
 export function MemoryBookApp() {
   const [screen, setScreen] = useState<AppScreen>("home");
   // CRUD는 AI 프록시 API가 아니라 기기 내부 SQLite만 사용한다.
-  const { books: localBooks, isLoading, error, saveMemoir, getMemoirById, deleteMemoir } =
-    useMemoirDB();
+  const {
+    books: localBooks,
+    isLoading,
+    error,
+    saveMemoir,
+    getMemoirById,
+    deleteMemoir,
+    deleteMemoirChapter,
+  } = useMemoirDB();
   const [activeBook, setActiveBook] = useState<BiographyBook | null>(null);
   const [previewBook, setPreviewBook] = useState<BiographyBook | null>(null);
   const [recordedAudio, setRecordedAudio] = useState<RecordedAudio | null>(null);
@@ -105,6 +112,12 @@ export function MemoryBookApp() {
     setActiveBook(await saveMemoir(updatedBook));
   }
 
+  async function deleteChapter(chapterNumber: number) {
+    if (!activeBook) return;
+    const updatedBook = await deleteMemoirChapter(activeBook.id, chapterNumber);
+    if (updatedBook) setActiveBook(updatedBook);
+  }
+
   if (screen === "setup") {
     return (
       <PreRecordSetupScreen
@@ -178,6 +191,7 @@ export function MemoryBookApp() {
           setScreen("editor");
         }}
         onReorderChapters={(chapters) => void reorderChapters(chapters)}
+        onDeleteChapter={(chapterNumber) => void deleteChapter(chapterNumber)}
       />
     );
   }
@@ -201,8 +215,8 @@ export function MemoryBookApp() {
             summary: section.summary,
             body: section.pages.join("\n\n"),
           }}
-          audioUrl={activeBook.audioUrl}
-          rawText={activeBook.rawText}
+          audioUrl={section.audioUrl}
+          rawText={section.rawText}
           onCancel={() => {
             setEditingSection(null);
             setScreen("reader");

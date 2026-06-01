@@ -20,6 +20,9 @@ export type BiographySection = {
   sectionNumber: number;
   title: string;
   episodeId?: string;
+  recordingId?: number;
+  audioUrl?: string;
+  rawText?: string;
   time?: string;
   place?: string;
   summary?: string;
@@ -81,7 +84,7 @@ export function mergeMemoirBooks(current: BiographyBook, added: BiographyBook): 
     title: "나의 기억책",
     recordedAt: added.recordedAt ?? current.recordedAt,
     audioUrl: added.audioUrl ?? current.audioUrl,
-    rawText: [current.rawText, added.rawText].filter(Boolean).join("\n\n"),
+    rawText: added.rawText ?? current.rawText,
     chapters,
   };
 }
