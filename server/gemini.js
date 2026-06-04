@@ -1,6 +1,72 @@
 const fs = require("node:fs");
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
+const MAX_RETRY_COUNT = 3;
+const GEMINI_TIMEOUT_MS = 60000;
+const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
+
+const memoirResponseSchema = {
+  type: "object",
+  properties: {
+    title: { type: "string" },
+    chapters: {
+      type: "array",
+      minItems: 1,
+      items: {
+        type: "object",
+        properties: {
+          chapterNumber: { type: "integer" },
+          title: { type: "string" },
+          sections: {
+            type: "array",
+            minItems: 1,
+            items: {
+              type: "object",
+              properties: {
+                sectionNumber: { type: "integer" },
+                title: { type: "string" },
+                time: { type: "string" },
+                place: { type: "string" },
+                summary: { type: "string" },
+                content: { type: "string" },
+                tags: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+              },
+              required: ["sectionNumber", "title", "time", "place", "summary", "content"],
+            },
+          },
+        },
+        required: ["chapterNumber", "title", "sections"],
+      },
+    },
+  },
+  required: ["title", "chapters"],
+};
+
+const episodeResponseSchema = {
+  type: "object",
+  properties: {
+    episode: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        content: { type: "string" },
+        time: { type: "string" },
+        place: { type: "string" },
+      },
+      required: ["title", "content"],
+    },
+    tags: {
+      type: "array",
+      minItems: 1,
+      maxItems: 5,
+      items: { type: "string" },
+    },
+  },
+  required: ["episode", "tags"],
+};
 
 const systemInstruction = `당신은 사용자의 두서없는 음성 기록(STT)을 바탕으로 진정성 있는 자서전의 한 장(Chapter)을 작성하는 전문 대필 작가입니다.
 
@@ -28,7 +94,7 @@ const systemInstruction = `당신은 사용자의 두서없는 음성 기록(STT
           "time": "제공된 시기",
           "place": "제공된 장소",
           "summary": "이 섹션의 내용을 1~2문장으로 명확하게 요약",
-          "body": "위 윤문 절대 원칙이 적용된 500자 내외의 본문 텍스트"
+          "content": "위 윤문 절대 원칙이 적용된 500자 내외의 본문 텍스트"
         }
       ]
     }
@@ -41,13 +107,13 @@ const episodeSystemInstruction = `너는 음성 기반 AI 자서전 생성 시�
 
 [핵심 제약사항]
 1. 문체 및 구성:
-   - 본문은 신뢰성 있고 완성도 높은 문어체(~했다, ~였다)로 작성한다.
-   - 부모님의 실제 감정과 핵심 사건(인물, 장소, 사건의 인과관계)을 왜곡하거나 과도하게 허구로 각색하지 않는다.
-   - 분량은 3~4개 단락, 공백 포함 500자 내외로 압축한다.
+  - 본문은 신뢰성 있고 완성도 높은 문어체(~했다, ~였다)로 작성한다.
+  - 부모님의 실제 감정과 핵심 사건(인물, 장소, 사건의 인과관계)을 왜곡하거나 과도하게 허구로 각색하지 않는다.
+  - 분량은 3~4개 단락, 공백 포함 500자 내외로 압축한다.
 2. 응답 형식:
-   - 인사말, 부연 설명, 공감 멘트를 출력하지 않는다.
-   - 마크다운 백틱을 포함하지 않는다.
-   - 아래 규격의 순수 JSON 문자열만 출력한다.
+  - 인사말, 부연 설명, 공감 멘트를 출력하지 않는다.
+  - 마크다운 백틱을 포함하지 않는다.
+  - 아래 규격의 순수 JSON 문자열만 출력한다.
 
 {
   "episode": {
@@ -72,38 +138,107 @@ function isGeminiConfigured() {
   return Boolean(process.env.GEMINI_API_KEY);
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readGeminiText(data) {
+  const text = data.candidates?.[0]?.content?.parts
+    ?.map((part) => part.text || "")
+    .join("")
+    .trim();
+  return text || "";
+}
+
+function getFinishReason(data) {
+  return data.candidates?.[0]?.finishReason || "";
+}
+
+function createAbortController() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+  return { controller, timeout };
+}
+
 async function callGeminiDetailed(contents, generationConfig, instruction) {
   const config = getConfig();
   const { apiKey, model } = config;
-  const response = await fetch(`${API_BASE}/models/${model}:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents,
-      generationConfig,
-      ...(instruction
-        ? { system_instruction: { parts: [{ text: instruction }] } }
-        : {}),
-    }),
+  const requestBody = JSON.stringify({
+    contents,
+    generationConfig,
+    ...(instruction
+      ? { system_instruction: { parts: [{ text: instruction }] } }
+      : {}),
   });
+  for (let attempt = 1; attempt <= MAX_RETRY_COUNT; attempt += 1) {
+    const { controller, timeout } = createAbortController();
+    try {
+      const response = await fetch(`${API_BASE}/models/${model}:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: requestBody,
+        signal: controller.signal,
+      });
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Gemini API failed: ${response.status} ${body}`);
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        console.error(`Gemini API failed (${attempt}/${MAX_RETRY_COUNT}): ${response.status} ${body}`);
+        if (!RETRYABLE_STATUS_CODES.has(response.status) || attempt === MAX_RETRY_COUNT) {
+          let message = "Gemini 요청에 실패했습니다. 잠시 후 다시 시도해주세요.";
+          if (response.status === 429) {
+            message = "Gemini 사용량이 많습니다. 잠시 후 다시 시도해주세요.";
+          }
+          if ([500, 502, 503, 504].includes(response.status)) {
+            message = "Gemini 서버가 불안정합니다. 잠시 후 다시 시도해주세요.";
+          }
+          const error = new Error(message);
+          error.retryable = RETRYABLE_STATUS_CODES.has(response.status);
+          throw error;
+        }
+      } else {
+        const data = await response.json();
+        const text = readGeminiText(data);
+
+        if (text) {
+          return {
+            text,
+            usageMetadata: data.usageMetadata || {},
+            finishReason: getFinishReason(data),
+          };
+        }
+
+        console.error("Gemini API returned an empty response", {
+          attempt,
+          finishReason: getFinishReason(data),
+          promptFeedback: data.promptFeedback || {},
+        });
+        if (attempt === MAX_RETRY_COUNT) {
+          throw new Error("Gemini가 빈 응답을 반환했습니다. 잠시 후 다시 시도해주세요.");
+        }
+      }
+    } catch (error) {
+      const isAbort = error?.name === "AbortError";
+      console.error(`Gemini request error (${attempt}/${MAX_RETRY_COUNT}):`, error);
+      if (error?.retryable === false) {
+        throw error;
+      }
+      if (attempt === MAX_RETRY_COUNT) {
+        throw new Error(
+          isAbort
+            ? "Gemini 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
+            : error.message || "Gemini 요청에 실패했습니다. 잠시 후 다시 시도해주세요."
+        );
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (attempt < MAX_RETRY_COUNT) {
+      await wait(700 * attempt);
+    }
   }
 
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("");
-
-  if (!text) {
-    throw new Error("Gemini API returned an empty response.");
-  }
-
-  return {
-    text,
-    usageMetadata: data.usageMetadata || {},
-    finishReason: data.candidates?.[0]?.finishReason || "",
-  };
+  throw new Error("Gemini 요청에 실패했습니다. 잠시 후 다시 시도해주세요.");
 }
 
 async function callGemini(contents, generationConfig, instruction) {
@@ -133,49 +268,110 @@ async function transcribeAudio(filePath, mimeType) {
   ]);
 }
 
-function parseMemoirJson(value, time, place) {
-  const cleaned = value
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/```$/i, "")
-    .trim();
+function parseMemoirJson(value, time, place, sourceText = "") {
+  const parsed = parseJsonObject(value, () => createFallbackMemoir(sourceText || value, time, place));
 
-  const parsed = parseJsonObject(cleaned);
+  if (!parsed.title || !Array.isArray(parsed.chapters)) return createFallbackMemoir(sourceText || value, time, place);
 
-  if (!parsed.title || !Array.isArray(parsed.chapters)) {
-    throw new Error("Gemini memoir JSON must contain title and chapters.");
-  }
-
-  return {
-    title: String(parsed.title),
-    chapters: parsed.chapters.map((chapter, index) => ({
-      title: String(chapter.title || `제${index + 1}장`),
-      sections: (
+  const chapters = parsed.chapters
+    .map((chapter, index) => {
+      const sections = (
         Array.isArray(chapter.sections)
           ? chapter.sections
           : Array.isArray(chapter.memoir_sections)
             ? chapter.memoir_sections
             : []
-      ).map(
-        (section, sectionIndex) => ({
+      )
+        .map((section, sectionIndex) => ({
           title: String(section.title || `기억의 장면 ${sectionIndex + 1}`),
           time: String(section.time || time || ""),
           place: String(section.place || place || ""),
           summary: String(section.summary || ""),
           content: String(section.body || section.content || ""),
-        })
-      ),
-    })),
+          tags: Array.isArray(section.tags) ? section.tags.map(String).slice(0, 5) : [],
+        }))
+        .filter((section) => section.content.trim());
+
+      return {
+        title: String(chapter.title || `제${index + 1}장`),
+        sections,
+      };
+    })
+    .filter((chapter) => chapter.sections.length > 0);
+
+  if (chapters.length === 0) {
+    throw new Error("Gemini memoir JSON does not contain usable sections.");
+  }
+
+  return {
+    title: String(parsed.title),
+    chapters,
   };
 }
 
-function parseJsonObject(value) {
-  const firstBrace = value.indexOf("{");
-  const lastBrace = value.lastIndexOf("}");
+function parseJsonObject(value, fallbackFactory) {
+  const cleaned = String(value || "")
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
   if (firstBrace < 0 || lastBrace < firstBrace) {
-    throw new Error(`Gemini response does not contain a JSON object: ${value.slice(0, 200)}`);
+    if (fallbackFactory) return fallbackFactory(cleaned);
+    throw new Error(`Gemini response does not contain a JSON object: ${cleaned.slice(0, 200)}`);
   }
-  return JSON.parse(value.slice(firstBrace, lastBrace + 1));
+
+  try {
+    return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+  } catch (error) {
+    console.error("Failed to parse Gemini JSON", {
+      message: error.message,
+      sample: cleaned.slice(0, 500),
+    });
+    if (fallbackFactory) return fallbackFactory(cleaned);
+    throw new Error("Gemini 응답 JSON을 해석하지 못했습니다. 다시 시도해주세요.");
+  }
+}
+
+function compactText(value, maxLength = 500) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return normalized.slice(0, maxLength).replace(/\s+\S*$/, "").trim();
+}
+
+function createFallbackMemoir(rawText, time = "", place = "") {
+  const content = compactText(rawText, 500) || "음성 기록을 자서전 본문으로 정리하지 못했습니다.";
+  return {
+    title: "나의 기억",
+    chapters: [
+      {
+        title: "기억의 기록",
+        sections: [
+          {
+            title: "기억의 장면",
+            time: String(time || ""),
+            place: String(place || ""),
+            summary: content.slice(0, 120),
+            content,
+            tags: [],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function createFallbackEpisode(rawText, targetMaxLength) {
+  const content = compactText(rawText, targetMaxLength) || "입력된 원문을 정리하지 못했습니다.";
+  return {
+    episode: {
+      title: "기억의 기록",
+      content,
+    },
+    tags: ["기억"],
+  };
 }
 
 async function generateMemoir(rawText, time = "", place = "") {
@@ -196,19 +392,26 @@ async function generateMemoir(rawText, time = "", place = "") {
     {
       temperature: 0.2,
       responseMimeType: "application/json",
+      responseSchema: memoirResponseSchema,
       maxOutputTokens: 3000,
       thinkingConfig: { thinkingBudget: 0 },
     },
     systemInstruction
   );
 
-  return parseMemoirJson(text, time, place);
+  return parseMemoirJson(text, time, place, rawText);
 }
 
 async function generateEpisodeFromText(sttRawText) {
   const inputLength = sttRawText.length;
   const targetMaxLength =
-    inputLength <= 500 ? inputLength : inputLength <= 1250 ? Math.round(inputLength * 0.6) : 500;
+    inputLength <= 500
+      ? inputLength
+      : inputLength <= 1250
+        ? Math.round(500 + (inputLength - 500) * 0.3333)
+        : inputLength <= 2500
+          ? Math.round(750 + (inputLength - 1250) * 0.2)
+          : 1000;
   // JSON 래퍼와 모델 내부 처리 여유를 포함한다. 실제 본문 길이는 프롬프트로 제한한다.
   const maxOutputTokens = 3000;
   const prompt = `입력 STT 원문:\n${sttRawText}
@@ -225,13 +428,14 @@ async function generateEpisodeFromText(sttRawText) {
       {
         temperature: 0.2,
         responseMimeType: "application/json",
+        responseSchema: episodeResponseSchema,
         maxOutputTokens,
         thinkingConfig: { thinkingBudget: 0 },
       },
       episodeSystemInstruction
     );
     return {
-      parsed: parseJsonObject(response.text),
+      parsed: parseJsonObject(response.text, () => createFallbackEpisode(sttRawText, targetMaxLength)),
       usageMetadata: response.usageMetadata,
     };
   }

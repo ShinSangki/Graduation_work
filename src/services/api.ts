@@ -1,11 +1,36 @@
 import { BiographyBook } from "../data/sampleBiography";
+import { Capacitor } from "@capacitor/core";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  `${window.location.protocol}//${window.location.hostname}:3001`;
+function resolveApiBaseUrl() {
+  const configuredUrl = String(import.meta.env.VITE_API_BASE_URL || "").trim();
+  if (configuredUrl) return configuredUrl.replace(/\/$/, "");
+
+  if (Capacitor.isNativePlatform()) {
+    throw new Error(
+      "Android 실기에서는 VITE_API_BASE_URL이 필요합니다. 예: http://PC사설IP:3001"
+    );
+  }
+
+  return `${window.location.protocol}//${window.location.hostname}:3001`;
+}
 
 export function getApiUrl(path: string) {
-  return `${API_BASE_URL}${path}`;
+  return `${resolveApiBaseUrl()}${path}`;
+}
+
+async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit) {
+  const retryDelays = [2000, 4000, 6000];
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const response = await fetch(input, init);
+      if (response.status !== 503 || attempt === retryDelays.length) return response;
+    } catch (error) {
+      if (attempt === retryDelays.length) throw error;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
+  }
 }
 
 export type GeneratedMemoir = {
@@ -60,7 +85,7 @@ type GenerateEpisodeResponse =
 export async function generateEpisodeFromText(
   request: GenerateEpisodeRequest
 ): Promise<GeneratedEpisode> {
-  const response = await fetch(getApiUrl("/api/generate-from-text"), {
+  const response = await fetchWithRetry(getApiUrl("/api/generate-from-text"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
@@ -99,7 +124,7 @@ export async function generateMemoir(
   formData.append("time", time);
   formData.append("place", place);
 
-  const response = await fetch(getApiUrl("/api/generate"), {
+  const response = await fetchWithRetry(getApiUrl("/api/generate"), {
     method: "POST",
     body: formData,
   });

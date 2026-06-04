@@ -34,6 +34,26 @@ async function readStoredBlob(path: string, mimeType: string) {
   return data instanceof Blob ? data : base64ToBlob(data, mimeType);
 }
 
+async function ensureAudioRecordingPermission() {
+  try {
+    const capability = await VoiceRecorder.canDeviceVoiceRecord();
+    if (!capability.value) {
+      throw new Error("이 기기에서는 음성 녹음을 사용할 수 없습니다.");
+    }
+
+    const permission = await VoiceRecorder.hasAudioRecordingPermission();
+    if (permission.value) return;
+
+    const requested = await VoiceRecorder.requestAudioRecordingPermission();
+    if (!requested.value) {
+      throw new Error("마이크 권한이 거부되었습니다. 설정에서 마이크 권한을 허용해주세요.");
+    }
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error("마이크 권한을 확인하지 못했습니다.");
+  }
+}
+
 export function useAudioRecorder() {
   const [recordedAudio, setRecordedAudio] = useState<RecordedAudio | null>(null);
   const isMountedRef = useRef(true);
@@ -57,33 +77,32 @@ export function useAudioRecorder() {
   }, []);
 
   const startRecording = useCallback(async () => {
-    const capability = await VoiceRecorder.canDeviceVoiceRecord();
-    if (!capability.value) {
-      throw new Error("이 기기에서는 음성 녹음을 사용할 수 없습니다.");
-    }
+    try {
+      await ensureAudioRecordingPermission();
 
-    const permission = await VoiceRecorder.hasAudioRecordingPermission();
-    if (!permission.value) {
-      const requested = await VoiceRecorder.requestAudioRecordingPermission();
-      if (!requested.value) {
-        window.alert("마이크 권한이 필요합니다. 설정에서 권한을 허용해주세요.");
-        throw new Error("마이크 권한이 없습니다.");
+      if (Capacitor.isNativePlatform()) {
+        await Filesystem.requestPermissions().catch((error) => {
+          console.warn("Filesystem permission request failed; continuing with app-private storage.", error);
+        });
       }
-    }
 
-    if (Capacitor.isNativePlatform()) {
-      await Filesystem.requestPermissions();
+      setRecordedAudio(null);
+      await VoiceRecorder.startRecording({
+        directory: Directory.Data,
+        subDirectory: AUDIO_DIRECTORY,
+      });
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : "녹음을 시작하지 못했습니다.");
     }
-
-    setRecordedAudio(null);
-    await VoiceRecorder.startRecording({
-      directory: Directory.Data,
-      subDirectory: AUDIO_DIRECTORY,
-    });
   }, []);
 
   const stopRecording = useCallback(async () => {
-    const { value } = await VoiceRecorder.stopRecording();
+    let value;
+    try {
+      ({ value } = await VoiceRecorder.stopRecording());
+    } catch {
+      throw new Error("녹음을 종료하지 못했습니다. 다시 시도해주세요.");
+    }
     const mimeType = value.mimeType || "audio/webm";
     let path = value.path;
 

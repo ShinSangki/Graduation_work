@@ -12,6 +12,7 @@ import {
 
 const DB_OPTIONS = { database: DATABASE_NAME };
 let initialization: Promise<void> | null = null;
+let transactionQueue: Promise<void> = Promise.resolve();
 
 type TableInfoRow = {
   name: string;
@@ -92,7 +93,10 @@ export async function initializeDatabase() {
       database: DATABASE_NAME,
       statements: CREATE_MEMOIR_SECTION_RECORDING_INDEX,
     });
-  })();
+  })().catch((error) => {
+    initialization = null;
+    throw error;
+  });
 
   return initialization;
 }
@@ -103,6 +107,7 @@ export async function run(sql: string, values: any[] = []) {
     database: DATABASE_NAME,
     statement: sql,
     values,
+    transaction: false,
   });
 }
 
@@ -117,14 +122,31 @@ export async function query<T>(sql: string, values: any[] = []) {
 }
 
 export async function transaction<T>(work: () => Promise<T>) {
-  await initializeDatabase();
-  await CapacitorSQLite.beginTransaction(DB_OPTIONS);
+  const previous = transactionQueue;
+  let release!: () => void;
+  transactionQueue = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  await previous;
   try {
-    const result = await work();
-    await CapacitorSQLite.commitTransaction(DB_OPTIONS);
-    return result;
-  } catch (error) {
-    await CapacitorSQLite.rollbackTransaction(DB_OPTIONS);
-    throw error;
+    await initializeDatabase();
+    const active = await CapacitorSQLite.isTransactionActive(DB_OPTIONS);
+    if (active.result) {
+      await CapacitorSQLite.rollbackTransaction(DB_OPTIONS);
+    }
+
+    await CapacitorSQLite.beginTransaction(DB_OPTIONS);
+    try {
+      const result = await work();
+      await CapacitorSQLite.commitTransaction(DB_OPTIONS);
+      return result;
+    } catch (error) {
+      const stillActive = await CapacitorSQLite.isTransactionActive(DB_OPTIONS);
+      if (stillActive.result) await CapacitorSQLite.rollbackTransaction(DB_OPTIONS);
+      throw error;
+    }
+  } finally {
+    release();
   }
 }

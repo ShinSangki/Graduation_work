@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { type ReactNode, type TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { App as CapacitorApp } from "@capacitor/app";
 import { BiographyEditorScreen, EditorData } from "./components/BiographyEditorScreen";
 import { BiographyReaderScreen } from "./components/BiographyReaderScreen";
 import { GenerateProgressScreen } from "./components/GenerateProgressScreen";
@@ -6,20 +7,19 @@ import { HomeScreen } from "./components/HomeScreen";
 import { LibraryScreen } from "./components/LibraryScreen";
 import { PreRecordSetupScreen } from "./components/PreRecordSetupScreen";
 import { RecordScreen } from "./components/RecordScreen";
-import { BiographyBook, mergeMemoirBooks } from "./data/sampleBiography";
+import { StorageConsentScreen } from "./components/StorageConsentScreen";
+import { BiographyBook } from "./data/sampleBiography";
 import { RecordedAudio } from "./hooks/useAudioRecorder";
 import { useMemoirDB } from "./hooks/useMemoirDB";
+import { generateEpisodeFromText } from "./services/api";
 
 type AppScreen = "home" | "setup" | "record" | "generate" | "library" | "reader" | "editor";
+type ReaderBackScreen = "home" | "library";
+type TouchStart = { x: number; y: number; fromRightEdge: boolean };
 
-function createEmptyMemoir(id: string): BiographyBook {
-  return {
-    id,
-    title: "나의 기억책",
-    createdAt: new Date().toISOString(),
-    chapters: [],
-  };
-}
+const RIGHT_EDGE_WIDTH = 56;
+const SWIPE_MIN_DISTANCE = 80;
+const SWIPE_MAX_VERTICAL_DRIFT = 60;
 
 export default function App() {
   return <MemoryBookApp />;
@@ -27,12 +27,22 @@ export default function App() {
 
 export function MemoryBookApp() {
   const [screen, setScreen] = useState<AppScreen>("home");
+  const screenRef = useRef<AppScreen>("home");
+  const historyStackRef = useRef<AppScreen[]>([]);
+  const forwardStackRef = useRef<AppScreen[]>([]);
+  const touchStartRef = useRef<TouchStart | null>(null);
   // CRUD는 AI 프록시 API가 아니라 기기 내부 SQLite만 사용한다.
   const {
     books: localBooks,
     isLoading,
     error,
+    storageReady,
+    storageError,
+    prepareStorage,
     saveMemoir,
+    saveMemoirToBiographies,
+    createNewBiography,
+    updateMemoirCover,
     getMemoirById,
     deleteMemoir,
     deleteMemoirChapter,
@@ -40,8 +50,11 @@ export function MemoryBookApp() {
   const [activeBook, setActiveBook] = useState<BiographyBook | null>(null);
   const [previewBook, setPreviewBook] = useState<BiographyBook | null>(null);
   const [recordedAudio, setRecordedAudio] = useState<RecordedAudio | null>(null);
+  const [readerBackScreen, setReaderBackScreen] = useState<ReaderBackScreen>("library");
   const [setupStep, setSetupStep] = useState<1 | 2>(1);
   const [recordContext, setRecordContext] = useState({ time: "", place: "" });
+  const [generationTargetIds, setGenerationTargetIds] = useState<string[]>([]);
+  const [isEditorSaving, setIsEditorSaving] = useState(false);
   const [editingSection, setEditingSection] = useState<{
     chapterNumber: number;
     sectionNumber: number;
@@ -50,30 +63,190 @@ export function MemoryBookApp() {
   const libraryBooks = useMemo(() => localBooks, [localBooks]);
   const recentMemoir = localBooks[0] || null;
 
-  async function openReader(bookId: string) {
+  useEffect(() => {
+    screenRef.current = screen;
+  }, [screen]);
+
+  const navigateTo = useCallback((nextScreen: AppScreen, options?: { replace?: boolean }) => {
+    setScreen((currentScreen) => {
+      if (currentScreen === nextScreen) return currentScreen;
+      if (!options?.replace) historyStackRef.current.push(currentScreen);
+      forwardStackRef.current = [];
+      return nextScreen;
+    });
+  }, []);
+
+  const goBack = useCallback((fallbackScreen: AppScreen = "home") => {
+    setScreen((currentScreen) => {
+      const previousScreen = historyStackRef.current.pop();
+      if (previousScreen) {
+        forwardStackRef.current.push(currentScreen);
+        return previousScreen;
+      }
+      return currentScreen === fallbackScreen ? currentScreen : fallbackScreen;
+    });
+  }, []);
+
+  const goForward = useCallback(() => {
+    setScreen((currentScreen) => {
+      const nextScreen = forwardStackRef.current.pop();
+      if (!nextScreen) return currentScreen;
+      historyStackRef.current.push(currentScreen);
+      return nextScreen;
+    });
+  }, []);
+
+  useEffect(() => {
+    let backButtonListener: Awaited<ReturnType<typeof CapacitorApp.addListener>> | undefined;
+
+    void CapacitorApp.addListener("backButton", () => {
+      if (screenRef.current === "home" && historyStackRef.current.length === 0) {
+        void CapacitorApp.exitApp();
+        return;
+      }
+      goBack("home");
+    }).then((listener) => {
+      backButtonListener = listener;
+    });
+
+    return () => {
+      void backButtonListener?.remove();
+    };
+  }, [goBack]);
+
+  function handleRootTouchStart(event: TouchEvent<HTMLDivElement>) {
+    const touch = event.changedTouches[0];
+    touchStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      fromRightEdge: window.innerWidth - touch.clientX <= RIGHT_EDGE_WIDTH,
+    };
+  }
+
+  function handleRootTouchEnd(event: TouchEvent<HTMLDivElement>) {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start || screenRef.current === "reader") return;
+
+    const touch = event.changedTouches[0];
+    const deltaX = touch.clientX - start.x;
+    const deltaY = Math.abs(touch.clientY - start.y);
+    const isRightEdgeForwardSwipe =
+      start.fromRightEdge && deltaX <= -SWIPE_MIN_DISTANCE && deltaY <= SWIPE_MAX_VERTICAL_DRIFT;
+
+    if (isRightEdgeForwardSwipe) {
+      goForward();
+    }
+  }
+
+  function renderWithNavigationGestures(content: ReactNode) {
+    return (
+      <div
+        className="app-navigation-shell"
+        onTouchStart={handleRootTouchStart}
+        onTouchEnd={handleRootTouchEnd}
+      >
+        {content}
+      </div>
+    );
+  }
+
+  async function openReader(bookId: string, backScreen: ReaderBackScreen = "library") {
     const book = await getMemoirById(bookId);
     if (!book) return;
     setActiveBook(book);
-    setScreen("reader");
+    setReaderBackScreen(backScreen);
+    navigateTo("reader");
   }
 
   async function deleteBook(bookId: string) {
     await deleteMemoir(bookId);
   }
 
-  async function handleGenerated(book: BiographyBook) {
-    const currentBook = localBooks[0] ? await getMemoirById(localBooks[0].id) : null;
-    const nextBook = currentBook
-      ? mergeMemoirBooks(currentBook, book)
-      : mergeMemoirBooks(createEmptyMemoir(book.id), book);
-    const savedBook = await saveMemoir(nextBook, recordedAudio?.fileUri);
-    setActiveBook(savedBook);
+  async function handleGenerated(
+    book: BiographyBook,
+    biographyIds: string[],
+    nextScreen: "reader" | "library" = "reader"
+  ) {
+    const targetIds = biographyIds.length > 0
+      ? biographyIds
+      : localBooks[0]?.id
+        ? [localBooks[0].id]
+        : [];
+    const savedBooks = await saveMemoirToBiographies(book, targetIds, recordedAudio?.fileUri);
+    setActiveBook(savedBooks[0] || null);
+    setReaderBackScreen("library");
     setRecordedAudio(null);
-    setScreen("reader");
+    setGenerationTargetIds([]);
+    navigateTo(nextScreen);
+  }
+
+  function startNewRecord() {
+    setSetupStep(1);
+    setGenerationTargetIds([]);
+    navigateTo("setup");
+  }
+
+  async function updateActiveCover(coverImage: string) {
+    if (!activeBook) return;
+    const updatedBook = await updateMemoirCover(activeBook.id, coverImage);
+    setActiveBook(updatedBook || { ...activeBook, coverImage });
+  }
+
+  async function createTextEpisodeForActiveBook() {
+    if (!activeBook) return;
+    const rawText = window.prompt("자서전에 추가할 이야기를 입력해 주세요.");
+    if (!rawText?.trim()) return;
+
+    const generated = await generateEpisodeFromText({
+      sttRawText: rawText.trim(),
+      time: recordContext.time,
+      place: recordContext.place,
+    });
+    const now = new Date().toISOString();
+    const generatedBook: BiographyBook = {
+      id: `text-${Date.now()}`,
+      title: activeBook.title,
+      createdAt: now,
+      recordedAt: now,
+      rawText,
+      chapters: [
+        {
+          chapterNumber: 1,
+          title: generated.episode.title,
+          sections: [
+            {
+              sectionNumber: 1,
+              title: generated.episode.title,
+              episodeId: generated.episode.episode_id,
+              rawText,
+              time: recordContext.time,
+              place: recordContext.place,
+              summary: generated.episode.tags.join(", "),
+              pages: [generated.episode.content],
+            },
+          ],
+        },
+      ],
+    };
+    const [savedBook] = await saveMemoirToBiographies(generatedBook, [activeBook.id]);
+    if (savedBook) setActiveBook(savedBook);
+  }
+
+  function handleReaderCreateEpisode(method: "record" | "upload" | "text") {
+    if (!activeBook) return;
+    if (method === "text") {
+      void createTextEpisodeForActiveBook();
+      return;
+    }
+
+    setGenerationTargetIds([activeBook.id]);
+    setSetupStep(1);
+    navigateTo("record");
   }
 
   async function saveEditor(updatedData: EditorData) {
-    if (!activeBook || !editingSection) return;
+    if (!activeBook || !editingSection || isEditorSaving) return;
 
     const updatedBook: BiographyBook = {
       ...activeBook,
@@ -99,10 +272,15 @@ export function MemoryBookApp() {
       ),
     };
 
-    setActiveBook(updatedBook);
-    setActiveBook(await saveMemoir(updatedBook));
-    setEditingSection(null);
-    setScreen("reader");
+    setIsEditorSaving(true);
+    try {
+      setActiveBook(updatedBook);
+      setActiveBook(await saveMemoir(updatedBook));
+      setEditingSection(null);
+      navigateTo("reader", { replace: true });
+    } finally {
+      setIsEditorSaving(false);
+    }
   }
 
   async function reorderChapters(chapters: BiographyBook["chapters"]) {
@@ -118,54 +296,66 @@ export function MemoryBookApp() {
     if (updatedBook) setActiveBook(updatedBook);
   }
 
+  if (!storageReady) {
+    return renderWithNavigationGestures(
+      <StorageConsentScreen
+        error={storageError}
+        isLoading={isLoading}
+        onAgree={() => void prepareStorage()}
+      />
+    );
+  }
+
   if (screen === "setup") {
-    return (
+    return renderWithNavigationGestures(
       <PreRecordSetupScreen
         initialStep={setupStep}
         initialTime={recordContext.time}
         initialPlace={recordContext.place}
-        onBack={() => setScreen("home")}
+        onBack={() => goBack("home")}
         onNext={(time, place) => {
           setRecordContext({ time, place });
           setSetupStep(2);
-          setScreen("record");
+          navigateTo("record");
         }}
       />
     );
   }
 
   if (screen === "record") {
-    return (
+    return renderWithNavigationGestures(
       <RecordScreen
         time={recordContext.time}
         place={recordContext.place}
         onRecorded={(audio) => {
           setRecordedAudio(audio);
-          setScreen("generate");
+          navigateTo("generate");
         }}
         onBack={() => {
           setSetupStep(2);
-          setScreen("setup");
+          goBack("setup");
         }}
       />
     );
   }
 
   if (screen === "generate" && recordedAudio) {
-    return (
+    return renderWithNavigationGestures(
       <GenerateProgressScreen
         audioBlob={recordedAudio.blob}
         audioUrl={recordedAudio.playbackUrl}
         time={recordContext.time}
         place={recordContext.place}
+        biographies={libraryBooks}
+        initialSelectedBiographyIds={generationTargetIds}
         onGenerated={handleGenerated}
-        onBackHome={() => setScreen("home")}
+        onBackHome={() => navigateTo("home")}
       />
     );
   }
 
   if (screen === "library") {
-    return (
+    return renderWithNavigationGestures(
       <LibraryScreen
         books={libraryBooks}
         previewBook={previewBook}
@@ -176,22 +366,26 @@ export function MemoryBookApp() {
           setPreviewBook(await getMemoirById(bookId));
         }}
         onDelete={deleteBook}
-        onBackHome={() => setScreen("home")}
+        onBackHome={() => goBack("home")}
+        onStartRecord={startNewRecord}
+        onCreateBiography={createNewBiography}
       />
     );
   }
 
   if (screen === "reader" && activeBook) {
-    return (
+    return renderWithNavigationGestures(
       <BiographyReaderScreen
         book={activeBook}
-        onBack={() => setScreen("library")}
+        onBack={() => goBack(readerBackScreen)}
         onEdit={(chapterNumber, sectionNumber) => {
           setEditingSection({ chapterNumber, sectionNumber });
-          setScreen("editor");
+          navigateTo("editor");
         }}
         onReorderChapters={(chapters) => void reorderChapters(chapters)}
         onDeleteChapter={(chapterNumber) => void deleteChapter(chapterNumber)}
+        onUpdateCover={updateActiveCover}
+        onCreateEpisode={handleReaderCreateEpisode}
       />
     );
   }
@@ -205,7 +399,7 @@ export function MemoryBookApp() {
     );
 
     if (chapter && section) {
-      return (
+      return renderWithNavigationGestures(
         <BiographyEditorScreen
           initialData={{
             chapterTitle: chapter.title,
@@ -217,9 +411,10 @@ export function MemoryBookApp() {
           }}
           audioUrl={section.audioUrl}
           rawText={section.rawText}
+          isSaving={isEditorSaving}
           onCancel={() => {
             setEditingSection(null);
-            setScreen("reader");
+            goBack("reader");
           }}
           onSave={saveEditor}
         />
@@ -227,15 +422,14 @@ export function MemoryBookApp() {
     }
   }
 
-  return (
+  return renderWithNavigationGestures(
     <HomeScreen
       recentMemoir={recentMemoir}
       onStartRecord={() => {
-        setSetupStep(1);
-        setScreen("setup");
+        startNewRecord();
       }}
-      onOpenLibrary={() => setScreen("library")}
-      onReadRecent={openReader}
+      onOpenLibrary={() => navigateTo("library")}
+      onReadRecent={(bookId) => void openReader(bookId, "home")}
     />
   );
 }

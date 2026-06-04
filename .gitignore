@@ -9,3 +9,7 @@ android/build/
 android/app/build/
 android/local.properties
 *.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+memory-book-debug.apk
+memory-book-debug.zip

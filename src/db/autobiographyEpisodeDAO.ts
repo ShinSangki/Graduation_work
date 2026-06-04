@@ -2,6 +2,10 @@ import { initializeDatabase, isNativeDatabaseAvailable, query, run } from "./dat
 
 const FALLBACK_STORAGE_KEY = "memory_book_local_episodes";
 
+/*
+ * 현재 사용자-facing 자서전 CRUD는 useMemoirDB.ts가 담당한다.
+ * 이 DAO는 EpisodeDemoScreen의 STT 텍스트 기반 에피소드 생성 검증용 저장소다.
+ */
 export type EpisodeData = {
   episode_id: string;
   title: string;

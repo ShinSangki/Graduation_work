@@ -15,8 +15,8 @@ type GenerateEpisodeInput = {
 };
 
 /**
- * UI에서 generateAutobiography()만 호출하면 된다.
- * Gemini 호출 -> SQLite 저장 -> 최신 목록 갱신 순서로 실행한다.
+ * 현재 App.tsx에는 연결하지 않은 내부 검증용 훅이다.
+ * EpisodeDemoScreen에서 STT 텍스트 기반 생성/저장 파이프라인을 점검할 때 사용한다.
  */
 export function useEpisodeGenerationController() {
   const [episodes, setEpisodes] = useState<SavedEpisode[]>([]);

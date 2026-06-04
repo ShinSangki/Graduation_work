@@ -3,6 +3,7 @@ export type BiographyBook = {
   id: string;
   title: string;
   subtitle?: string;
+  coverImage?: string;
   createdAt: string;
   recordedAt?: string;
   audioUrl?: string;
@@ -81,7 +82,7 @@ export function mergeMemoirBooks(current: BiographyBook, added: BiographyBook): 
 
   return {
     ...current,
-    title: "나의 기억책",
+    title: current.title,
     recordedAt: added.recordedAt ?? current.recordedAt,
     audioUrl: added.audioUrl ?? current.audioUrl,
     rawText: added.rawText ?? current.rawText,

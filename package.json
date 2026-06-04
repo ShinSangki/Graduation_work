@@ -9,6 +9,8 @@
   "dependencies": {
     "@capacitor-community/sqlite": "^7.0.3",
     "@capacitor/android": "7.6.5",
+    "@capacitor/app": "^7.1.2",
+    "@capacitor/camera": "^7.0.5",
     "@capacitor/core": "7.6.5",
     "@capacitor/filesystem": "7.1.4",
     "@vitejs/plugin-react": "latest",

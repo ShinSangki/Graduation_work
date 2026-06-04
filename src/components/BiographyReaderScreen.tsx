@@ -12,6 +12,8 @@ import {
   buildReaderPages,
   formatKoreanDate,
 } from "../data/sampleBiography";
+import { useKoreanTTS } from "../hooks/useKoreanTTS";
+import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 
 type BiographyReaderScreenProps = {
   book: BiographyBook;
@@ -19,6 +21,8 @@ type BiographyReaderScreenProps = {
   onEdit: (chapterNumber: number, sectionNumber: number) => void;
   onReorderChapters: (chapters: BiographyBook["chapters"]) => void;
   onDeleteChapter: (chapterNumber: number) => void;
+  onUpdateCover: (coverImage: string) => Promise<void>;
+  onCreateEpisode: (method: "record" | "upload" | "text") => void;
 };
 
 const SWIPE_THRESHOLD = 50;
@@ -43,12 +47,26 @@ function formatRecordedDate(value: string | undefined) {
   return `${year.slice(-2)}년 ${Number(month)}월 ${Number(day)}일`;
 }
 
+function getPageLabel(page: ReaderPage) {
+  if (page.type === "cover") return "[표지]";
+  if (page.type === "toc") return "[목차]";
+  return `[제${page.chapterNumber}장 ${page.chapterTitle} - ${page.sectionTitle}]`;
+}
+
+function getCompactPageLabel(page: ReaderPage, pageIndex: number) {
+  if (page.type === "cover") return "[표지]";
+  if (page.type === "toc") return "[목차]";
+  return String(Math.max(1, pageIndex - 1));
+}
+
 export function BiographyReaderScreen({
   book,
   onBack,
   onEdit,
   onReorderChapters,
   onDeleteChapter,
+  onUpdateCover,
+  onCreateEpisode,
 }: BiographyReaderScreenProps) {
   const [orderedChapters, setOrderedChapters] = useState(book.chapters);
   const orderedChaptersRef = useRef(book.chapters);
@@ -60,10 +78,13 @@ export function BiographyReaderScreen({
     getStoredPageIndex(lastPageKey, pages.length - 1)
   );
   const [showPagePicker, setShowPagePicker] = useState(false);
+  const [showCreateMenu, setShowCreateMenu] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const [slideDirection, setSlideDirection] = useState<"left" | "right">("left");
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const swipeAreaRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const { isSpeaking, isSupported: isTtsSupported, speak, stop } = useKoreanTTS();
 
   const totalPages = pages.length;
   const page: ReaderPage = pages[currentPageIndex];
@@ -115,7 +136,7 @@ export function BiographyReaderScreen({
   }, [book.chapters]);
 
   function stopAudio() {
-    window.speechSynthesis?.cancel();
+    stop();
     if (!audioRef.current) return;
     audioRef.current.pause();
     audioRef.current.currentTime = 0;
@@ -172,18 +193,46 @@ export function BiographyReaderScreen({
     if (index >= 0) goToPage(index);
   }
 
+  function goToToc() {
+    goToPage(1);
+  }
+
   function readWithTts() {
-    if (page.type !== "body" || !("speechSynthesis" in window)) return;
-    stopAudio();
-    const utterance = new SpeechSynthesisUtterance(page.body);
-    utterance.lang = "ko-KR";
-    utterance.rate = 0.9;
-    window.speechSynthesis.speak(utterance);
+    if (page.type !== "body") return;
+    if (isSpeaking) {
+      stop();
+      return;
+    }
+    speak(page.body);
   }
 
   function handleEdit() {
     if (page.type !== "body") return;
     onEdit(page.chapterNumber, page.sectionNumber);
+  }
+
+  async function updateCover(source: CameraSource) {
+    const image = await Camera.getPhoto({
+      quality: 78,
+      allowEditing: false,
+      resultType: CameraResultType.DataUrl,
+      source,
+    });
+    if (image.dataUrl) await onUpdateCover(image.dataUrl);
+  }
+
+  async function handleCoverClick() {
+    try {
+      const useCamera = window.confirm("카메라로 촬영할까요?\n취소를 누르면 갤러리에서 선택합니다.");
+      await updateCover(useCamera ? CameraSource.Camera : CameraSource.Photos);
+    } catch (coverError) {
+      console.error("Cover image selection failed.", coverError);
+    }
+  }
+
+  function handleCreateEpisode(method: "record" | "upload" | "text") {
+    setShowCreateMenu(false);
+    onCreateEpisode(method);
   }
 
   useEffect(() => {
@@ -195,6 +244,15 @@ export function BiographyReaderScreen({
   useEffect(() => () => stopAudio(), []);
 
   useEffect(() => {
+    function handleScroll() {
+      setShowScrollTop(window.scrollY > 360);
+    }
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
     const swipeArea = swipeAreaRef.current;
     if (!swipeArea) return;
 
@@ -204,7 +262,7 @@ export function BiographyReaderScreen({
       const touch = event.changedTouches[0];
       const distanceX = touch.clientX - touchStart.current.x;
       const distanceY = touch.clientY - touchStart.current.y;
-      if (Math.abs(distanceX) > Math.abs(distanceY)) event.preventDefault();
+      if (event.cancelable && Math.abs(distanceX) > Math.abs(distanceY)) event.preventDefault();
     }
 
     swipeArea.addEventListener("touchmove", preventHorizontalScroll, { passive: false });
@@ -214,9 +272,18 @@ export function BiographyReaderScreen({
   function renderPage() {
     if (page.type === "cover") {
       return (
-        <section
+        <button
+          type="button"
+          onClick={handleCoverClick}
+          aria-label="표지 사진 변경"
           className="simplePanel"
           style={{
+            backgroundImage: book.coverImage
+              ? `linear-gradient(rgba(0,0,0,0.38), rgba(0,0,0,0.38)), url("${book.coverImage}")`
+              : undefined,
+            backgroundPosition: "center",
+            backgroundSize: "cover",
+            color: book.coverImage ? "#fff" : undefined,
             minHeight: "calc(100dvh - 184px)",
             display: "flex",
             flexDirection: "column",
@@ -224,19 +291,45 @@ export function BiographyReaderScreen({
             textAlign: "center",
           }}
         >
-          <p className="eyebrow">Legacy Archive</p>
+          <p className="eyebrow" style={{ color: book.coverImage ? "#fff" : undefined }}>Legacy Archive</p>
           <h1>{book.title}</h1>
-          {book.subtitle && <p className="mutedText">{book.subtitle}</p>}
-          <p className="mutedText">{formatKoreanDate(book.createdAt)}</p>
-        </section>
+          {book.subtitle && <p className="mutedText" style={{ color: book.coverImage ? "#fff" : undefined }}>{book.subtitle}</p>}
+          <p className="mutedText" style={{ color: book.coverImage ? "#fff" : undefined }}>{formatKoreanDate(book.createdAt)}</p>
+          <p className="mutedText" style={{ color: book.coverImage ? "#fff" : undefined }}>표지를 눌러 사진 변경</p>
+        </button>
       );
     }
 
     if (page.type === "toc") {
       return (
         <section className="simplePanel">
-          <p className="eyebrow">Contents</p>
-          <h1>목차</h1>
+          <div style={{ alignItems: "center", display: "flex", gap: "10px", justifyContent: "space-between" }}>
+            <div>
+              <p className="eyebrow">Contents</p>
+              <h1>목차</h1>
+            </div>
+            <button
+              className="iconButton"
+              onClick={() => setShowCreateMenu((visible) => !visible)}
+              style={{ color: "#007AFF", fontSize: "0.82rem", fontWeight: "bold", padding: "0 8px", width: "56px" }}
+              type="button"
+            >
+              추가
+            </button>
+          </div>
+          {showCreateMenu && (
+            <div className="selectionPanel">
+              <button className="secondaryButton" onClick={() => handleCreateEpisode("record")} type="button">
+                음성 녹음
+              </button>
+              <button className="secondaryButton" onClick={() => handleCreateEpisode("upload")} type="button">
+                음성 업로드
+              </button>
+              <button className="secondaryButton" onClick={() => handleCreateEpisode("text")} type="button">
+                텍스트 작성
+              </button>
+            </div>
+          )}
           <p className="mutedText">☰ 버튼을 끌어서 순서를 바꾸거나, 삭제 버튼으로 녹음 기록을 지울 수 있습니다.</p>
           <div
             className="buttonStack"
@@ -398,7 +491,7 @@ export function BiographyReaderScreen({
               flexDirection: "column",
               left: "50%",
               maxHeight: "220px",
-              maxWidth: "180px",
+              maxWidth: "420px",
               overflowY: "auto",
               padding: "6px",
               position: "fixed",
@@ -407,9 +500,10 @@ export function BiographyReaderScreen({
               zIndex: 101,
             }}
           >
-            {pages.map((_item, index) => (
+            {pages.map((item, index) => (
               <button
                 key={index}
+                aria-current={index === currentPageIndex ? "page" : undefined}
                 onClick={() => goToPage(index)}
                 style={{
                   background: index === currentPageIndex ? "#e8f0ff" : "#fff",
@@ -419,14 +513,15 @@ export function BiographyReaderScreen({
                   cursor: "pointer",
                   fontSize: "15px",
                   fontWeight: index === currentPageIndex ? 800 : 600,
-                  minHeight: "34px",
-                  padding: "6px 10px",
-                  textAlign: "center",
+                  lineHeight: 1.4,
+                  minHeight: "44px",
+                  padding: "8px 10px",
+                  textAlign: "left",
                   width: "100%",
                 }}
                 type="button"
               >
-                {index + 1} / {totalPages}
+                {getPageLabel(item)}
               </button>
             ))}
           </div>
@@ -473,6 +568,21 @@ export function BiographyReaderScreen({
             >
               수정
             </button>
+          ) : currentPageIndex !== 1 ? (
+            <button
+              className="iconButton"
+              onClick={goToToc}
+              style={{
+                color: "#007AFF",
+                fontSize: "0.9rem",
+                fontWeight: "bold",
+                padding: "0 8px",
+                width: "46px",
+              }}
+              type="button"
+            >
+              목차
+            </button>
           ) : (
             <div aria-hidden="true" />
           )}
@@ -494,6 +604,23 @@ export function BiographyReaderScreen({
           {renderPage()}
         </div>
       </div>
+
+      {showScrollTop && (
+        <button
+          aria-label="맨 위로 이동"
+          className="iconButton"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          style={{
+            bottom: "calc(158px + max(16px, env(safe-area-inset-bottom)))",
+            position: "fixed",
+            right: "18px",
+            zIndex: 102,
+          }}
+          type="button"
+        >
+          ▲
+        </button>
+      )}
 
       <div
         style={{
@@ -525,29 +652,51 @@ export function BiographyReaderScreen({
         >
           <button
             className="primaryButton"
-            disabled={page.type !== "body"}
+            disabled={page.type !== "body" || !isTtsSupported}
             onClick={readWithTts}
-            style={{ width: "100%" }}
+            style={{ minHeight: "56px", width: "100%" }}
           >
-            TTS 읽기
+            {isSpeaking ? "낭독 중지" : "읽어주기"}
           </button>
         </div>
         <div
           style={{
             alignItems: "center",
             display: "grid",
-            gridTemplateColumns: "1fr auto 1fr",
+            gridTemplateColumns: "minmax(58px, 1fr) auto auto minmax(72px, 1fr)",
+            gap: "12px",
             margin: 0,
-            padding: "6px 12px",
+            padding: "10px 12px",
           }}
         >
           <button
             className="secondaryButton"
             disabled={currentPageIndex === 0}
             onClick={() => goToPage(currentPageIndex - 1)}
-            style={{ justifySelf: "start" }}
+            style={{
+              fontSize: "14px",
+              justifySelf: "start",
+              minHeight: "56px",
+              padding: "10px 12px",
+              whiteSpace: "nowrap",
+            }}
           >
             이전
+          </button>
+          <button
+            className="secondaryButton"
+            disabled={currentPageIndex === 1}
+            onClick={goToToc}
+            style={{
+              fontSize: "14px",
+              justifySelf: "center",
+              minHeight: "56px",
+              padding: "10px 12px",
+              whiteSpace: "nowrap",
+            }}
+            type="button"
+          >
+            목차
           </button>
           <button
             aria-expanded={showPagePicker}
@@ -557,16 +706,28 @@ export function BiographyReaderScreen({
             style={{
               fontSize: "14px",
               justifySelf: "center",
-              minHeight: "36px",
-              padding: "6px 10px",
-              width: "72px",
+              minHeight: "56px",
+              padding: "10px 12px",
+              whiteSpace: "nowrap",
+              width: "86px",
             }}
             type="button"
           >
-            {currentPageIndex + 1} / {totalPages}
+            {getCompactPageLabel(page, currentPageIndex)}
           </button>
-          <button className="primaryButton" onClick={goNext} style={{ justifySelf: "end" }}>
-            {currentPageIndex === totalPages - 1 ? "보관함으로" : "다음"}
+          <button
+            className="primaryButton"
+            onClick={goNext}
+            style={{
+              fontSize: "14px",
+              justifySelf: "end",
+              minHeight: "56px",
+              minWidth: currentPageIndex === totalPages - 1 ? "104px" : undefined,
+              padding: "10px 12px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {currentPageIndex === totalPages - 1 ? "보관함으로 이동" : "다음"}
           </button>
         </div>
         <div
