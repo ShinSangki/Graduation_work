@@ -1,4 +1,4 @@
-import { ChangeEvent, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { useAudioRecorder } from "../hooks/useAudioRecorder";
 import { RecordedAudio } from "../hooks/useAudioRecorder";
 
@@ -7,6 +7,8 @@ type RecordScreenProps = {
   onBack: () => void;
   time: string;
   place: string;
+  autoStart?: boolean;
+  generateButtonLabel?: string;
 };
 
 type RecordingStatus = "ready" | "recording" | "done";
@@ -29,19 +31,50 @@ const statusContent: Record<
   },
 };
 
-export function RecordScreen({ onRecorded, onBack, time, place }: RecordScreenProps) {
+export function RecordScreen({
+  onRecorded,
+  onBack,
+  time,
+  place,
+  autoStart = false,
+  generateButtonLabel = "자서전 생성",
+}: RecordScreenProps) {
   const [recordingStatus, setRecordingStatus] =
     useState<RecordingStatus>("ready");
   const [error, setError] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const didAutoStartRef = useRef(false);
   const { clearRecording, recordedAudio, selectAudioFile, startRecording, stopRecording } =
     useAudioRecorder();
   const content = statusContent[recordingStatus];
+
+  useEffect(() => {
+    if (!autoStart || didAutoStartRef.current || recordingStatus !== "ready") return;
+    didAutoStartRef.current = true;
+    void handleStartRecording();
+  }, [autoStart, recordingStatus]);
+
+  useEffect(() => {
+    if (recordingStatus !== "recording") return;
+    const startedAt = Date.now() - recordingSeconds * 1000;
+    const timer = window.setInterval(() => {
+      setRecordingSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [recordingSeconds, recordingStatus]);
+
+  function formatRecordingTime(totalSeconds: number) {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
 
   async function handleStartRecording() {
     try {
       setError("");
       clearRecording();
+      setRecordingSeconds(0);
       await startRecording();
       setRecordingStatus("recording");
     } catch (recordError) {
@@ -74,6 +107,7 @@ export function RecordScreen({ onRecorded, onBack, time, place }: RecordScreenPr
     if (isUploading) return;
     clearRecording();
     setError("");
+    setRecordingSeconds(0);
     setRecordingStatus("ready");
   }
 
@@ -133,7 +167,9 @@ export function RecordScreen({ onRecorded, onBack, time, place }: RecordScreenPr
           wordBreak: "keep-all",
         }}
       >
-        💡 [{time}], [{place}]에서의 기억을 듣고 있습니다.
+        {time || place
+          ? `💡 [${time || "시기 미정"}], [${place || "장소 미정"}]에서의 기억을 듣고 있습니다.`
+          : "💡 먼저 이야기를 녹음한 뒤 시기와 장소를 선택합니다."}
       </aside>
 
       <section
@@ -190,6 +226,8 @@ export function RecordScreen({ onRecorded, onBack, time, place }: RecordScreenPr
           style={{
             alignItems: "center",
             display: "flex",
+            flexDirection: "column",
+            gap: "14px",
             height: "240px",
             justifyContent: "center",
             marginTop: "30px",
@@ -197,6 +235,19 @@ export function RecordScreen({ onRecorded, onBack, time, place }: RecordScreenPr
             width: "240px",
           }}
         >
+          {recordingStatus === "recording" && (
+            <div
+              aria-live="polite"
+              style={{
+                color: "var(--primary)",
+                fontSize: "1.8rem",
+                fontWeight: 900,
+                letterSpacing: 0,
+              }}
+            >
+              {formatRecordingTime(recordingSeconds)}
+            </div>
+          )}
           <button
             aria-label={
               recordingStatus === "done" ? "다시 녹음 준비" : "녹음 시작"
@@ -330,7 +381,7 @@ export function RecordScreen({ onRecorded, onBack, time, place }: RecordScreenPr
                       업로드 중
                     </span>
                   ) : (
-                    "자서전 생성"
+                    generateButtonLabel
                   )}
                 </button>
               </>

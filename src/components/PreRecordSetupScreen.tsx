@@ -8,6 +8,7 @@ type PreRecordSetupScreenProps = {
   initialPlace?: string;
   onNext: (time: string, place: string) => void;
   onBack: () => void;
+  finalButtonLabel?: string;
 };
 
 const OTHER_OPTION = "기타";
@@ -29,6 +30,7 @@ export function PreRecordSetupScreen({
   initialPlace = "",
   onNext,
   onBack,
+  finalButtonLabel = "녹음 화면으로",
 }: PreRecordSetupScreenProps) {
   const [step, setStep] = useState<SetupStep>(initialStep);
   const [time, setTime] = useState(() => getInitialOption(initialTime, timeOptions));
@@ -129,7 +131,7 @@ export function PreRecordSetupScreen({
           style={{ fontSize: "1.2rem", minHeight: "60px", width: "100%" }}
           type="button"
         >
-          {step === 1 ? "다음" : "녹음 화면으로"}
+          {step === 1 ? "다음" : finalButtonLabel}
         </button>
       </div>
     </main>

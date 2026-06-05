@@ -53,10 +53,8 @@ function getPageLabel(page: ReaderPage) {
   return `[제${page.chapterNumber}장 ${page.chapterTitle} - ${page.sectionTitle}]`;
 }
 
-function getCompactPageLabel(page: ReaderPage, pageIndex: number) {
-  if (page.type === "cover") return "[표지]";
-  if (page.type === "toc") return "[목차]";
-  return String(Math.max(1, pageIndex - 1));
+function getCompactPageLabel(pageIndex: number, totalPages: number) {
+  return `${pageIndex + 1}/${totalPages}`;
 }
 
 export function BiographyReaderScreen({
@@ -410,30 +408,14 @@ export function BiographyReaderScreen({
             <br />
             <span style={{ fontSize: "0.7em" }}>{page.sectionTitle}</span>
           </h1>
-          {book.recordedAt && (
+          {(book.recordedAt || page.time || page.place) && (
             <p className="mutedText" style={{ fontSize: "14px", marginTop: "6px" }}>
-              {formatRecordedDate(book.recordedAt)} 녹음
+              {book.recordedAt && `${formatRecordedDate(book.recordedAt)} 녹음`}
+              {page.time && `${book.recordedAt ? " · " : ""}${page.time}`}
+              {page.place && `${book.recordedAt || page.time ? " · " : ""}${page.place}`}
             </p>
           )}
         </header>
-
-        {(page.time || page.place) && (
-          <div
-            className="simplePanel"
-            style={{
-              alignItems: "center",
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "8px",
-              marginBottom: "18px",
-              minHeight: "56px",
-              padding: "12px",
-            }}
-          >
-            {page.time && <span className="eyebrow">#{page.time}</span>}
-            {page.place && <span className="eyebrow">#{page.place}</span>}
-          </div>
-        )}
 
         <audio ref={audioRef} key={currentPageIndex} />
 
@@ -443,6 +425,7 @@ export function BiographyReaderScreen({
             fontSize: "20px",
             lineHeight: 1.8,
             marginTop: "24px",
+            paddingBottom: "72px",
           }}
         >
           {splitSentences(page.body).map((sentence, index) => (
@@ -459,7 +442,7 @@ export function BiographyReaderScreen({
     <main
       style={{
         minHeight: "100dvh",
-        padding: "calc(62px + max(16px, env(safe-area-inset-top))) 16px calc(142px + max(16px, env(safe-area-inset-bottom)))",
+        padding: "calc(62px + max(16px, env(safe-area-inset-top))) 16px calc(122px + max(12px, env(safe-area-inset-bottom)))",
       }}
     >
       <style>{`
@@ -485,7 +468,7 @@ export function BiographyReaderScreen({
               background: "#fff",
               border: "1px solid rgba(23, 25, 31, 0.12)",
               borderRadius: "14px",
-              bottom: "132px",
+              bottom: "116px",
               boxShadow: "0 10px 28px rgba(38, 48, 75, 0.18)",
               display: "flex",
               flexDirection: "column",
@@ -611,7 +594,7 @@ export function BiographyReaderScreen({
           className="iconButton"
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
           style={{
-            bottom: "calc(158px + max(16px, env(safe-area-inset-bottom)))",
+            bottom: "calc(136px + max(12px, env(safe-area-inset-bottom)))",
             position: "fixed",
             right: "18px",
             zIndex: 102,
@@ -647,14 +630,14 @@ export function BiographyReaderScreen({
         <div
           style={{
             borderBottom: "1px solid rgba(23, 25, 31, 0.08)",
-            padding: "8px 12px",
+            padding: "6px 12px",
           }}
         >
           <button
             className="primaryButton"
             disabled={page.type !== "body" || !isTtsSupported}
             onClick={readWithTts}
-            style={{ minHeight: "56px", width: "100%" }}
+            style={{ minHeight: "48px", width: "100%" }}
           >
             {isSpeaking ? "낭독 중지" : "읽어주기"}
           </button>
@@ -664,9 +647,9 @@ export function BiographyReaderScreen({
             alignItems: "center",
             display: "grid",
             gridTemplateColumns: "minmax(58px, 1fr) auto auto minmax(72px, 1fr)",
-            gap: "12px",
+            gap: "10px",
             margin: 0,
-            padding: "10px 12px",
+            padding: "8px 12px",
           }}
         >
           <button
@@ -676,8 +659,8 @@ export function BiographyReaderScreen({
             style={{
               fontSize: "14px",
               justifySelf: "start",
-              minHeight: "56px",
-              padding: "10px 12px",
+              minHeight: "48px",
+              padding: "8px 12px",
               whiteSpace: "nowrap",
             }}
           >
@@ -690,8 +673,8 @@ export function BiographyReaderScreen({
             style={{
               fontSize: "14px",
               justifySelf: "center",
-              minHeight: "56px",
-              padding: "10px 12px",
+              minHeight: "48px",
+              padding: "8px 12px",
               whiteSpace: "nowrap",
             }}
             type="button"
@@ -706,14 +689,14 @@ export function BiographyReaderScreen({
             style={{
               fontSize: "14px",
               justifySelf: "center",
-              minHeight: "56px",
-              padding: "10px 12px",
+              minHeight: "48px",
+              padding: "8px 12px",
               whiteSpace: "nowrap",
               width: "86px",
             }}
             type="button"
           >
-            {getCompactPageLabel(page, currentPageIndex)}
+            {getCompactPageLabel(currentPageIndex, totalPages)}
           </button>
           <button
             className="primaryButton"
@@ -721,9 +704,9 @@ export function BiographyReaderScreen({
             style={{
               fontSize: "14px",
               justifySelf: "end",
-              minHeight: "56px",
+              minHeight: "48px",
               minWidth: currentPageIndex === totalPages - 1 ? "104px" : undefined,
-              padding: "10px 12px",
+              padding: "8px 12px",
               whiteSpace: "nowrap",
             }}
           >
@@ -733,7 +716,7 @@ export function BiographyReaderScreen({
         <div
           style={{
             borderTop: "1px solid rgba(23, 25, 31, 0.06)",
-            height: "max(16px, env(safe-area-inset-bottom))",
+            height: "max(12px, env(safe-area-inset-bottom))",
           }}
           aria-hidden="true"
         />

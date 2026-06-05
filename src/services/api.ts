@@ -113,6 +113,15 @@ function formatRecordedAt(date = new Date()) {
   ].join(".");
 }
 
+function getAudioExtension(mimeType: string) {
+  if (mimeType.includes("mp4") || mimeType.includes("m4a")) return "m4a";
+  if (mimeType.includes("aac")) return "aac";
+  if (mimeType.includes("mpeg") || mimeType.includes("mp3")) return "mp3";
+  if (mimeType.includes("wav")) return "wav";
+  if (mimeType.includes("ogg")) return "ogg";
+  return "webm";
+}
+
 export async function generateMemoir(
   audioBlob: Blob,
   time: string,
@@ -120,7 +129,7 @@ export async function generateMemoir(
   audioUrl?: string
 ): Promise<BiographyBook> {
   const formData = new FormData();
-  formData.append("audio", audioBlob, `recording-${Date.now()}.webm`);
+  formData.append("audio", audioBlob, `recording-${Date.now()}.${getAudioExtension(audioBlob.type)}`);
   formData.append("time", time);
   formData.append("place", place);
 

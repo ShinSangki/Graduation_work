@@ -39,6 +39,20 @@ function removeFile(filePath) {
   }
 }
 
+function inferAudioMimeType(file) {
+  const mimeType = String(file?.mimetype || "");
+  if (mimeType.startsWith("audio/")) return mimeType;
+
+  const ext = path.extname(file?.originalname || file?.path || "").toLowerCase();
+  if (ext === ".m4a" || ext === ".mp4") return "audio/mp4";
+  if (ext === ".aac") return "audio/aac";
+  if (ext === ".mp3") return "audio/mpeg";
+  if (ext === ".wav") return "audio/wav";
+  if (ext === ".ogg" || ext === ".oga") return "audio/ogg";
+  if (ext === ".webm") return "audio/webm";
+  return "audio/webm";
+}
+
 app.get("/health", (_req, res) => {
   res.json({ ok: true, geminiConfigured: isGeminiConfigured() });
 });
@@ -56,7 +70,7 @@ app.post("/api/generate", upload.single("audio"), async (req, res) => {
     converted = await convertToWav(req.file.path, `temp-${Date.now()}`);
     const source = converted || {
       filePath: req.file.path,
-      mimeType: req.file.mimetype || "audio/webm",
+      mimeType: inferAudioMimeType(req.file),
     };
     const rawText = await transcribeAudio(source.filePath, source.mimeType);
     const memoir = await generateMemoir(rawText, time, place);

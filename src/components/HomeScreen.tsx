@@ -1,16 +1,21 @@
 import { MemoirSummary } from "../hooks/useMemoirDB";
+import memoryBookLogo from "../assets/memory-book-logo.png";
 
 type HomeScreenProps = {
   onStartRecord: () => void;
+  onStartRecordFirst: () => void;
   onOpenLibrary: () => void;
   onReadRecent: (bookId: string) => void;
+  onCreateDemoData: () => void;
   recentMemoir: MemoirSummary | null;
 };
 
 export function HomeScreen({
   onStartRecord,
+  onStartRecordFirst,
   onOpenLibrary,
   onReadRecent,
+  onCreateDemoData,
   recentMemoir,
 }: HomeScreenProps) {
   return (
@@ -20,28 +25,44 @@ export function HomeScreen({
         boxSizing: "border-box",
         color: "#1f2937",
         minHeight: "100dvh",
-        padding: "40px 20px calc(190px + env(safe-area-inset-bottom))",
+        padding: "40px 20px calc(210px + env(safe-area-inset-bottom))",
       }}
     >
+      <button
+        aria-label="시연용 더미데이터 생성"
+        onClick={onCreateDemoData}
+        style={{
+          background: "transparent",
+          border: 0,
+          boxShadow: "none",
+          height: "56px",
+          minHeight: 0,
+          opacity: 0,
+          padding: 0,
+          position: "fixed",
+          right: 0,
+          top: "env(safe-area-inset-top)",
+          width: "56px",
+          zIndex: 20,
+        }}
+        type="button"
+      />
       <div style={{ margin: "0 auto", maxWidth: "520px" }}>
         <header style={{ textAlign: "center" }}>
-          <div
+          <img
+            alt="기억책 로고"
             aria-label="나의 기억책 로고"
-            role="img"
             style={{
-              alignItems: "center",
-              background: "#e8efff",
-              borderRadius: "16px",
-              display: "flex",
-              fontSize: "42px",
-              height: "80px",
-              justifyContent: "center",
+              borderRadius: "26px",
+              display: "block",
+              height: "156px",
               margin: "0 auto 16px",
-              width: "80px",
+              objectFit: "contain",
+              overflow: "hidden",
+              width: "144px",
             }}
-          >
-            📖
-          </div>
+            src={memoryBookLogo}
+          />
           <h1
             style={{
               fontSize: "2.25rem",
@@ -123,6 +144,13 @@ export function HomeScreen({
         </section>
       </div>
 
+      <button
+        aria-label="바로 녹음 시작"
+        className="record-btn-ready homeRecordButton"
+        onClick={onStartRecordFirst}
+        type="button"
+      />
+
       <nav
         aria-label="주요 메뉴"
         style={{
@@ -138,23 +166,6 @@ export function HomeScreen({
         }}
       >
         <div style={{ display: "grid", gap: "10px", margin: "0 auto", maxWidth: "520px" }}>
-          <button
-            onClick={onStartRecord}
-            style={{
-              background: "#246bfe",
-              border: 0,
-              borderRadius: "16px",
-              color: "#fff",
-              cursor: "pointer",
-              fontSize: "1.3rem",
-              fontWeight: "bold",
-              lineHeight: 1.5,
-              minHeight: "58px",
-            }}
-            type="button"
-          >
-            녹음 시작
-          </button>
           <button
             onClick={onOpenLibrary}
             style={{

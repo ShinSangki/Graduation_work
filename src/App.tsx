@@ -8,6 +8,7 @@ import { LibraryScreen } from "./components/LibraryScreen";
 import { PreRecordSetupScreen } from "./components/PreRecordSetupScreen";
 import { RecordScreen } from "./components/RecordScreen";
 import { StorageConsentScreen } from "./components/StorageConsentScreen";
+import { demoMemoirs } from "./data/demoMemoirs";
 import { BiographyBook } from "./data/sampleBiography";
 import { RecordedAudio } from "./hooks/useAudioRecorder";
 import { useMemoirDB } from "./hooks/useMemoirDB";
@@ -15,6 +16,7 @@ import { generateEpisodeFromText } from "./services/api";
 
 type AppScreen = "home" | "setup" | "record" | "generate" | "library" | "reader" | "editor";
 type ReaderBackScreen = "home" | "library";
+type RecordFlow = "setup-first" | "record-first";
 type TouchStart = { x: number; y: number; fromRightEdge: boolean };
 
 const RIGHT_EDGE_WIDTH = 56;
@@ -41,6 +43,7 @@ export function MemoryBookApp() {
     prepareStorage,
     saveMemoir,
     saveMemoirToBiographies,
+    saveDemoMemoirs,
     createNewBiography,
     updateMemoirCover,
     getMemoirById,
@@ -53,7 +56,9 @@ export function MemoryBookApp() {
   const [readerBackScreen, setReaderBackScreen] = useState<ReaderBackScreen>("library");
   const [setupStep, setSetupStep] = useState<1 | 2>(1);
   const [recordContext, setRecordContext] = useState({ time: "", place: "" });
+  const [recordFlow, setRecordFlow] = useState<RecordFlow>("setup-first");
   const [generationTargetIds, setGenerationTargetIds] = useState<string[]>([]);
+  const [isDemoGenerating, setIsDemoGenerating] = useState(false);
   const [isEditorSaving, setIsEditorSaving] = useState(false);
   const [editingSection, setEditingSection] = useState<{
     chapterNumber: number;
@@ -182,9 +187,48 @@ export function MemoryBookApp() {
   }
 
   function startNewRecord() {
+    setRecordFlow("setup-first");
     setSetupStep(1);
     setGenerationTargetIds([]);
     navigateTo("setup");
+  }
+
+  function startRecordFirst() {
+    setRecordFlow("record-first");
+    setSetupStep(1);
+    setRecordContext({ time: "", place: "" });
+    setGenerationTargetIds([]);
+    setRecordedAudio(null);
+    navigateTo("record");
+  }
+
+  async function createDemoData() {
+    if (isDemoGenerating) return;
+    setIsDemoGenerating(true);
+    setRecordContext({ time: "시연용 기억", place: "더미데이터" });
+    setSetupStep(1);
+    navigateTo("setup");
+    window.setTimeout(() => {
+      setSetupStep(2);
+    }, 1000);
+    window.setTimeout(() => {
+      navigateTo("record");
+    }, 2000);
+    window.setTimeout(() => {
+      setRecordedAudio({
+        blob: new Blob(["demo"], { type: "audio/webm" }),
+        fileUri: "demo://memory-book",
+        playbackUrl: "",
+      });
+      navigateTo("generate");
+    }, 4000);
+  }
+
+  async function finishDemoDataGeneration() {
+    await saveDemoMemoirs(demoMemoirs);
+    setIsDemoGenerating(false);
+    setRecordedAudio(null);
+    navigateTo("library");
   }
 
   async function updateActiveCover(coverImage: string) {
@@ -313,10 +357,12 @@ export function MemoryBookApp() {
         initialTime={recordContext.time}
         initialPlace={recordContext.place}
         onBack={() => goBack("home")}
+        finalButtonLabel={recordFlow === "record-first" ? "자서전 생성" : "녹음 화면으로"}
         onNext={(time, place) => {
+          if (isDemoGenerating) return;
           setRecordContext({ time, place });
           setSetupStep(2);
-          navigateTo("record");
+          navigateTo(recordFlow === "record-first" ? "generate" : "record");
         }}
       />
     );
@@ -328,13 +374,25 @@ export function MemoryBookApp() {
         time={recordContext.time}
         place={recordContext.place}
         onRecorded={(audio) => {
+          if (isDemoGenerating) return;
           setRecordedAudio(audio);
+          if (recordFlow === "record-first") {
+            setSetupStep(1);
+            navigateTo("setup");
+            return;
+          }
           navigateTo("generate");
         }}
         onBack={() => {
+          if (recordFlow === "record-first") {
+            goBack("home");
+            return;
+          }
           setSetupStep(2);
           goBack("setup");
         }}
+        autoStart={false}
+        generateButtonLabel={recordFlow === "record-first" ? "시기 선택" : "자서전 생성"}
       />
     );
   }
@@ -349,6 +407,9 @@ export function MemoryBookApp() {
         biographies={libraryBooks}
         initialSelectedBiographyIds={generationTargetIds}
         onGenerated={handleGenerated}
+        isDemoMode={isDemoGenerating}
+        demoBooks={demoMemoirs}
+        onGenerateDemoBooks={() => finishDemoDataGeneration()}
         onBackHome={() => navigateTo("home")}
       />
     );
@@ -428,8 +489,10 @@ export function MemoryBookApp() {
       onStartRecord={() => {
         startNewRecord();
       }}
+      onStartRecordFirst={startRecordFirst}
       onOpenLibrary={() => navigateTo("library")}
       onReadRecent={(bookId) => void openReader(bookId, "home")}
+      onCreateDemoData={() => void createDemoData()}
     />
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BiographyPreview } from "./BiographyPreview";
 import { BiographyBook } from "../data/sampleBiography";
 import { MemoirSummary } from "../hooks/useMemoirDB";
@@ -11,6 +11,9 @@ type GenerateProgressScreenProps = {
   place: string;
   biographies: MemoirSummary[];
   initialSelectedBiographyIds?: string[];
+  demoBooks?: BiographyBook[];
+  isDemoMode?: boolean;
+  onGenerateDemoBooks?: (books: BiographyBook[]) => Promise<void>;
   onGenerated: (
     book: BiographyBook,
     biographyIds: string[],
@@ -28,6 +31,9 @@ export function GenerateProgressScreen({
   place,
   biographies,
   initialSelectedBiographyIds = [],
+  demoBooks = [],
+  isDemoMode = false,
+  onGenerateDemoBooks,
   onGenerated,
   onBackHome,
 }: GenerateProgressScreenProps) {
@@ -38,7 +44,22 @@ export function GenerateProgressScreen({
   const [isSaving, setIsSaving] = useState(false);
   const [selectedBiographyIds, setSelectedBiographyIds] = useState<string[]>([]);
   const [retryCount, setRetryCount] = useState(0);
+  const backgroundSaveRef = useRef(false);
+  const generationKeyRef = useRef("");
+  const isMountedRef = useRef(true);
+  const selectedBiographyIdsRef = useRef<string[]>([]);
   const isDone = currentStep === steps.length - 1;
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    selectedBiographyIdsRef.current = selectedBiographyIds;
+  }, [selectedBiographyIds]);
 
   useEffect(() => {
     setSelectedBiographyIds((current) => {
@@ -53,33 +74,69 @@ export function GenerateProgressScreen({
   }, [biographies, initialSelectedBiographyIds]);
 
   useEffect(() => {
-    let ignore = false;
+    if (isDemoMode) {
+      async function runDemo() {
+        try {
+          setError("");
+          setBook(null);
+          setShowPreview(false);
+          setCurrentStep(0);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          setCurrentStep(1);
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          setCurrentStep(2);
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          await onGenerateDemoBooks?.(demoBooks);
+        } catch (demoError) {
+          setError(demoError instanceof Error ? demoError.message : "더미데이터 생성에 실패했습니다.");
+        }
+      }
+
+      runDemo();
+      return;
+    }
+
+    const generationKey = [
+      retryCount,
+      audioBlob.size,
+      audioBlob.type,
+      time,
+      place,
+    ].join(":");
+
+    if (generationKeyRef.current === generationKey) return;
+    generationKeyRef.current = generationKey;
 
     async function run() {
       try {
-        setError("");
-        setBook(null);
-        setShowPreview(false);
-        setCurrentStep(0);
-        setCurrentStep(1);
+        backgroundSaveRef.current = false;
+        if (isMountedRef.current) {
+          setError("");
+          setBook(null);
+          setShowPreview(false);
+          setCurrentStep(0);
+          setCurrentStep(1);
+        }
         const detail = await generateMemoir(audioBlob, time, place, audioUrl);
-        if (ignore) return;
 
-        setBook(detail);
-        setCurrentStep(2);
+        if (backgroundSaveRef.current) {
+          await onGenerated(detail, selectedBiographyIdsRef.current, "library");
+          return;
+        }
+
+        if (isMountedRef.current) {
+          setBook(detail);
+          setCurrentStep(2);
+        }
       } catch (generateError) {
-        if (!ignore) {
+        if (isMountedRef.current) {
           setError(generateError instanceof Error ? generateError.message : "자서전 생성에 실패했습니다.");
         }
       }
     }
 
     run();
-
-    return () => {
-      ignore = true;
-    };
-  }, [audioBlob, audioUrl, place, retryCount, time]);
+  }, [audioBlob, audioUrl, demoBooks, isDemoMode, onGenerateDemoBooks, onGenerated, place, retryCount, time]);
 
   async function handleRead() {
     if (!book || isSaving) return;
@@ -108,8 +165,8 @@ export function GenerateProgressScreen({
   }
 
   function handleBackHome() {
-    if (!isDone && !error && !window.confirm("생성을 중단하고 처음으로 돌아갈까요?")) {
-      return;
+    if (!isDone && !error) {
+      backgroundSaveRef.current = true;
     }
     onBackHome();
   }

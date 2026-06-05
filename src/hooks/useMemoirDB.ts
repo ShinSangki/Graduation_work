@@ -454,6 +454,111 @@ export function useMemoirDB() {
     [getMemoirById, saveMemoir]
   );
 
+  const saveDemoMemoirs = useCallback(
+    async (books: BiographyBook[]): Promise<void> => {
+      const legacyDemoTitles = new Set([
+        "나의 사소한 이야기",
+        "처음 떠난 오사카",
+        "입대하던 봄날",
+        "계곡에서 배운 수영",
+      ]);
+      if (shouldUseFallbackStorage) {
+        const demoIds = new Set(books.map((book) => book.id));
+        const keptBooks = readFallbackBooks().filter(
+          (book) => !demoIds.has(book.id) && !legacyDemoTitles.has(book.title)
+        );
+        writeFallbackBooks([...books, ...keptBooks]);
+        await refresh();
+        return;
+      }
+
+      try {
+        await transaction(async () => {
+          const demoTitles = [...legacyDemoTitles];
+          for (const title of demoTitles) {
+            const rows = await query<{ id: number }>("SELECT id FROM memoirs WHERE title = ?", [title]);
+            for (const row of rows) {
+              await run("DELETE FROM memoir_chapters WHERE memoir_id = ?", [row.id]);
+              await run("DELETE FROM memoirs WHERE id = ?", [row.id]);
+            }
+          }
+
+          for (const book of books) {
+            const createdAt = book.createdAt || new Date().toISOString();
+            const recordedAt = book.recordedAt || createdAt;
+            const firstSection = book.chapters[0]?.sections[0];
+            const recording = await run(
+              `INSERT INTO recordings
+               (file_name, file_path, mime_type, file_size, raw_text, time, place, created_at)
+               VALUES (?, ?, ?, 0, ?, ?, ?, ?)`,
+              [
+                `${book.id}.demo`,
+                `demo://${book.id}`,
+                "text/demo",
+                book.rawText || firstSection?.pages.join("\n\n") || null,
+                firstSection?.time || null,
+                firstSection?.place || null,
+                createdAt,
+              ]
+            );
+            const recordingId = recording.changes?.lastId;
+            if (!recordingId) throw new Error("더미 녹음 저장에 실패했습니다.");
+
+            const memoir = await run(
+              `INSERT INTO memoirs
+               (recording_id, title, cover_image, created_at, updated_at, recorded_at)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+              [recordingId, book.title, book.coverImage || null, createdAt, new Date().toISOString(), recordedAt]
+            );
+            const memoirId = memoir.changes?.lastId;
+            if (!memoirId) throw new Error("더미 자서전 저장에 실패했습니다.");
+
+            for (const chapter of book.chapters) {
+              const insertedChapter = await run(
+                `INSERT INTO memoir_chapters (memoir_id, chapter_order, chapter_title)
+                 VALUES (?, ?, ?)`,
+                [memoirId, chapter.chapterNumber, chapter.title]
+              );
+              const chapterId = insertedChapter.changes?.lastId;
+              if (!chapterId) throw new Error("더미 챕터 저장에 실패했습니다.");
+
+              for (const section of chapter.sections) {
+                await run(
+                  `INSERT INTO memoir_sections
+                   (chapter_id, section_order, section_title, episode_id, recording_id, raw_text, time, place, summary, content)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  [
+                    chapterId,
+                    section.sectionNumber,
+                    section.title,
+                    section.episodeId || null,
+                    recordingId,
+                    section.rawText || book.rawText || null,
+                    section.time || null,
+                    section.place || null,
+                    section.summary || null,
+                    section.pages.join("\n\n"),
+                  ]
+                );
+              }
+            }
+          }
+        });
+        await refresh();
+      } catch (demoSaveFailure) {
+        console.error("Demo memoir save failed. Falling back to localStorage.", demoSaveFailure);
+        const demoIds = new Set(books.map((book) => book.id));
+        const keptBooks = readFallbackBooks().filter(
+          (book) => !demoIds.has(book.id) && !legacyDemoTitles.has(book.title)
+        );
+        writeFallbackBooks([...books, ...keptBooks]);
+        setUseFallbackStorage(true);
+        await refresh();
+      }
+    },
+    [refresh, shouldUseFallbackStorage]
+  );
+
   const updateMemoirCover = useCallback(
     async (memoirId: string, coverImage: string): Promise<BiographyBook | null> => {
       if (shouldUseFallbackStorage) {
@@ -614,6 +719,7 @@ export function useMemoirDB() {
     prepareStorage,
     saveMemoir,
     saveMemoirToBiographies,
+    saveDemoMemoirs,
     getBiographyList,
     createNewBiography,
     updateMemoirCover,
